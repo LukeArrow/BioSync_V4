@@ -1,11 +1,10 @@
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 ADDON = ROOT / "ha-addon" / "biosync_bridge"
@@ -39,25 +38,28 @@ class AddonTests(unittest.TestCase):
 
     def run_start_script(self, options, service_available=True, service_options=None):
         environment = {
-            key: value for key, value in os.environ.items()
+            key: value
+            for key, value in os.environ.items()
             if not key.startswith(("BIOSYNC_", "OPTION_", "SERVICE_"))
         }
-        environment.update({
-            "OPTION_serial_device": "/dev/serial/by-id/mega",
-            "OPTION_baud": "115200",
-            "OPTION_mqtt_port": "1883",
-            "OPTION_mqtt_prefix": "biosync_test",
-            "OPTION_log_level": "DEBUG",
-            "SERVICE_AVAILABLE": "1" if service_available else "0",
-            "SERVICE_host": "core-mosquitto",
-            "SERVICE_port": "1884",
-            "SERVICE_username": "service-user",
-            "SERVICE_password": "test-only-service-value",
-        })
+        environment.update(
+            {
+                "OPTION_serial_device": "/dev/serial/by-id/mega",
+                "OPTION_baud": "115200",
+                "OPTION_mqtt_port": "1883",
+                "OPTION_mqtt_prefix": "biosync_test",
+                "OPTION_log_level": "DEBUG",
+                "SERVICE_AVAILABLE": "1" if service_available else "0",
+                "SERVICE_host": "core-mosquitto",
+                "SERVICE_port": "1884",
+                "SERVICE_username": "service-user",
+                "SERVICE_password": "test-only-service-value",
+            }
+        )
         environment.update({f"OPTION_{key}": value for key, value in options.items()})
-        environment.update({
-            f"SERVICE_{key}": value for key, value in (service_options or {}).items()
-        })
+        environment.update(
+            {f"SERVICE_{key}": value for key, value in (service_options or {}).items()}
+        )
         mocks = """
 bashio::config() {
     local key="OPTION_${1}"
@@ -93,47 +95,63 @@ source "$1"
             environment["PATH"] = directory + os.pathsep + environment["PATH"]
             return subprocess.run(
                 ["bash", "-c", mocks, "addon-test", str(ADDON / "run.sh")],
-                env=environment, capture_output=True, text=True,
+                env=environment,
+                capture_output=True,
+                text=True,
             )
 
     def assert_bridge_environment(self, result, host, port, user, password):
         self.assertEqual(result.returncode, 0, result.stderr)
         output = json.loads(result.stdout)
         self.assertEqual(output["args"], ["-m", "biosync_bridge.main"])
-        self.assertEqual(output["env"], {
-            "BIOSYNC_SERIAL": "/dev/serial/by-id/mega",
-            "BIOSYNC_BAUD": "115200",
-            "BIOSYNC_MQTT_HOST": host,
-            "BIOSYNC_MQTT_PORT": port,
-            "BIOSYNC_MQTT_USER": user,
-            "BIOSYNC_MQTT_PASSWORD": password,
-            "BIOSYNC_MQTT_PREFIX": "biosync_test",
-            "BIOSYNC_LOG_LEVEL": "DEBUG",
-        })
+        self.assertEqual(
+            output["env"],
+            {
+                "BIOSYNC_SERIAL": "/dev/serial/by-id/mega",
+                "BIOSYNC_BAUD": "115200",
+                "BIOSYNC_MQTT_HOST": host,
+                "BIOSYNC_MQTT_PORT": port,
+                "BIOSYNC_MQTT_USER": user,
+                "BIOSYNC_MQTT_PASSWORD": password,
+                "BIOSYNC_MQTT_PREFIX": "biosync_test",
+                "BIOSYNC_LOG_LEVEL": "DEBUG",
+            },
+        )
 
     def test_manual_mqtt_options_are_exported_without_service_lookup(self):
         password = "test-only spaces $literal; 'quoted'"
-        result = self.run_start_script({
-            "mqtt_host": "broker.example",
-            "mqtt_port": "2883",
-            "mqtt_user": "manual-user",
-            "mqtt_password": password,
-        }, service_available=False)
+        result = self.run_start_script(
+            {
+                "mqtt_host": "broker.example",
+                "mqtt_port": "2883",
+                "mqtt_user": "manual-user",
+                "mqtt_password": password,
+            },
+            service_available=False,
+        )
         self.assert_bridge_environment(
             result, "broker.example", "2883", "manual-user", password
         )
         self.assertEqual(result.stderr, "")
 
     def test_empty_or_omitted_host_uses_all_mqtt_service_values(self):
-        for options in ({}, {
-            "mqtt_host": "", "mqtt_port": "2883",
-            "mqtt_user": "ignored", "mqtt_password": "test-only-ignored",
-        }):
+        for options in (
+            {},
+            {
+                "mqtt_host": "",
+                "mqtt_port": "2883",
+                "mqtt_user": "ignored",
+                "mqtt_password": "test-only-ignored",
+            },
+        ):
             with self.subTest(options=options):
                 result = self.run_start_script(options)
                 self.assert_bridge_environment(
-                    result, "core-mosquitto", "1884",
-                    "service-user", "test-only-service-value",
+                    result,
+                    "core-mosquitto",
+                    "1884",
+                    "service-user",
+                    "test-only-service-value",
                 )
                 self.assertNotIn("test-only-service-value", result.stderr)
 
@@ -145,12 +163,19 @@ source "$1"
     def test_mqtt_service_allows_missing_credentials(self):
         for user in ("null", "service-user"):
             with self.subTest(user=user):
-                result = self.run_start_script({}, service_options={
-                    "username": user, "password": "null",
-                })
+                result = self.run_start_script(
+                    {},
+                    service_options={
+                        "username": user,
+                        "password": "null",
+                    },
+                )
                 self.assert_bridge_environment(
-                    result, "core-mosquitto", "1884",
-                    "" if user == "null" else user, "",
+                    result,
+                    "core-mosquitto",
+                    "1884",
+                    "" if user == "null" else user,
+                    "",
                 )
 
     def test_missing_service_without_manual_host_fails_before_bridge_start(self):

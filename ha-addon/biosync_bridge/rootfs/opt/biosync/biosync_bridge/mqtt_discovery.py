@@ -32,9 +32,7 @@ SENSORS = {
     "vent_active": ("Lüftung Aktivität", "VENT_ACTIVE", None, None),
     "vent_error": ("Lüftung Fehler", "VENT_ERROR", None, None),
 }
-RELAY_ENTITIES = frozenset(
-    ("pump_active", "pump_error", "vent_active", "vent_error")
-)
+RELAY_ENTITIES = frozenset(("pump_active", "pump_error", "vent_active", "vent_error"))
 
 
 def publish_discovery(client, root="biosync_v4"):
@@ -103,7 +101,12 @@ def publish_discovery(client, root="biosync_v4"):
             f"homeassistant/button/biosync_v4/{slug}/config",
             _json(
                 {
-                    "name": "BioSync V4 " + ("Konfiguration lesen" if command == "GET" else "Status anfordern"),
+                    "name": "BioSync V4 "
+                    + (
+                        "Konfiguration lesen"
+                        if command == "GET"
+                        else "Status anfordern"
+                    ),
                     "unique_id": f"biosync_v4_{slug}",
                     "command_topic": f"{root}/command",
                     "payload_press": command,

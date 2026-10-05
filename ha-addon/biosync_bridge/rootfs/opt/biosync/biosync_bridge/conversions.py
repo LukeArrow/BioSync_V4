@@ -9,6 +9,14 @@ TDS_TEMPERATURE_COEFFICIENT = 0.02
 DEFAULT_TDS_COEFFICIENTS = (0.0, 0.0, 2.34, -622.0)
 DEFAULT_TURBIDITY_POINTS = ((0.0, 0.0), (512.0, 500.0), (1023.0, 1000.0))
 
+# Plausibilitätsgrenzen vor der Kalibrierung: cm, °C und 10-Bit-ADC-Rohwerte.
+RAW_VALUE_LIMITS = {
+    "DIST": (0.0, 500.0),
+    "TMP": (-20.0, 60.0),
+    "TUR": (0.0, 1023.0),
+    "TDS": (0.0, 1023.0),
+}
+
 
 def piecewise_linear(raw_value, points=DEFAULT_TURBIDITY_POINTS):
     """Interpoliert/extrapoliert zwischen sortierten (ADC, NTU)-Stützpunkten."""
@@ -49,9 +57,10 @@ def tds_ppm(raw_value, temperature_c, coefficients=DEFAULT_TDS_COEFFICIENTS):
 def convert_telemetry(values, parameters):
     """Ergänzt Telemetrie um kalibrierte Einheiten und HA-Konvertierungen."""
     result = dict(values)
-    for key in ("DIST", "TMP", "TUR", "TDS"):
+    for key, (minimum, maximum) in RAW_VALUE_LIMITS.items():
         if result[key] != "UNKNOWN":
-            result[key] = float(result[key])
+            raw = float(result[key])
+            result[key] = raw if minimum <= raw <= maximum else "UNKNOWN"
 
     if result["DIST"] != "UNKNOWN":
         result["DIST"] = round(
@@ -92,7 +101,9 @@ def convert_telemetry(values, parameters):
             )
         )
         try:
-            result["TDS_PPM"] = round(tds_ppm(result["TDS"], result["TMP"], coefficients), 2)
+            result["TDS_PPM"] = round(
+                tds_ppm(result["TDS"], result["TMP"], coefficients), 2
+            )
         except ValueError:
             result["TDS_PPM"] = "UNKNOWN"
     return result

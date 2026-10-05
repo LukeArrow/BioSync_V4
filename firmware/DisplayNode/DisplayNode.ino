@@ -1,4 +1,5 @@
 #include <EEPROM.h>
+#include "SoftUart.h"
 
 const uint8_t SENSOR_DE_PIN = 10;
 const unsigned long SENSOR_STALE_MS = 15000;
@@ -208,11 +209,10 @@ bool validRelayState(const char *value) {
 }
 
 void parseSensorFrame(char *frame) {
-  char *start = strchr(frame, '<');
-  if (start == NULL || strncmp(start, "<SENSOR;", 8) != 0 ||
-      strchr(start, '>') == NULL) {
+  if (!validFrameChecksum(frame) || strncmp(frame, "<SENSOR;", 8) != 0) {
     return;
   }
+  char *start = frame;
   char parsed[16];
   if (readField(start, "DIST", parsed, sizeof(parsed))) {
     if (strcmp(parsed, "UNKNOWN") == 0 || validNumber(parsed)) {
@@ -246,11 +246,10 @@ void parseSensorFrame(char *frame) {
 }
 
 void parseRelayFrame(char *frame) {
-  char *start = strchr(frame, '<');
-  if (start == NULL || strncmp(start, "<RELAY;", 7) != 0 ||
-      strchr(start, '>') == NULL) {
+  if (!validFrameChecksum(frame) || strncmp(frame, "<RELAY;", 7) != 0) {
     return;
   }
+  char *start = frame;
   const char *fields[4] = {"PUMP_ACTIVE", "PUMP_ERROR", "VENT_ACTIVE", "VENT_ERROR"};
   char parsed[8];
   for (uint8_t index = 0; index < 4; ++index) {

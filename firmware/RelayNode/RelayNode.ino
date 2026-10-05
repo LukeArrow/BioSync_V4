@@ -1,3 +1,5 @@
+#include "SoftUart.h"
+
 const uint8_t RS485_DE_PIN = 5;
 const uint8_t RS485_RX_PIN = 6;
 const uint8_t RS485_TX_PIN = 7;
@@ -14,26 +16,6 @@ uint8_t states[4] = {0, 0, 0, 0};
 bool initialized = false;
 unsigned long lastSample = 0;
 unsigned long lastTransmit = 0;
-
-void waitForBit(unsigned long deadline) {
-  while ((int32_t)(micros() - deadline) < 0) {
-  }
-}
-
-void sendByte(uint8_t value) {
-  unsigned long deadline = micros();
-  digitalWrite(RS485_TX_PIN, LOW);
-  deadline += 104;
-  waitForBit(deadline);
-  for (uint8_t bit = 0; bit < 8; ++bit) {
-    digitalWrite(RS485_TX_PIN, (value & (1 << bit)) ? HIGH : LOW);
-    deadline += 104;
-    waitForBit(deadline);
-  }
-  digitalWrite(RS485_TX_PIN, HIGH);
-  deadline += 104;
-  waitForBit(deadline);
-}
 
 uint16_t readAverage(uint8_t pin) {
   uint32_t total = 0;
@@ -55,24 +37,18 @@ uint8_t readLedState(uint8_t pin, uint8_t previous) {
 }
 
 void sendStates() {
+  // A0: Pumpe aktiv, A1: Pumpe Fehler, A2: Lüftung aktiv, A3: Lüftung Fehler.
+  // Fehlerkanäle A1/A3 liefern nur ERROR/IDLE, nie ACTIVE.
   char frame[112];
   snprintf(
       frame,
       sizeof(frame),
-      "<RELAY;PUMP_ACTIVE=%s;PUMP_ERROR=%s;VENT_ACTIVE=%s;VENT_ERROR=%s>",
+      "RELAY;PUMP_ACTIVE=%s;PUMP_ERROR=%s;VENT_ACTIVE=%s;VENT_ERROR=%s",
       stateNames[states[0]],
       stateNames[states[1] == 1 ? 2 : 0],
       stateNames[states[2]],
       stateNames[states[3] == 1 ? 2 : 0]);
-  digitalWrite(RS485_DE_PIN, HIGH);
-  delay(RS485_DELAY_MS);
-  for (const char *value = frame; *value; ++value) {
-    sendByte(*value);
-  }
-  sendByte('\r');
-  sendByte('\n');
-  delay(RS485_DELAY_MS);
-  digitalWrite(RS485_DE_PIN, LOW);
+  sendFrame(RS485_TX_PIN, RS485_DE_PIN, RS485_DELAY_MS, frame);
 }
 
 void setup() {
