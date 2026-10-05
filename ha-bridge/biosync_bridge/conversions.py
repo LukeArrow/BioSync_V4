@@ -6,8 +6,8 @@ TDS_TEMPERATURE_COEFFICIENT = 0.02
 
 # Diese Stützpunkte und Polynomkoeffizienten werden an die installierten
 # Sensoren angepasst; sie sind keine Firmware-Konstanten.
-DEFAULT_TURBIDITY_POINTS = ((0.0, 0.0), (1023.0, 1000.0))
-DEFAULT_TDS_COEFFICIENTS = (0.0, 0.0, 1.0, 0.0)
+DEFAULT_TDS_COEFFICIENTS = (0.0, 0.0, 2.34, -622.0)
+DEFAULT_TURBIDITY_POINTS = ((0.0, 0.0), (512.0, 500.0), (1023.0, 1000.0))
 
 
 def piecewise_linear(raw_value, points=DEFAULT_TURBIDITY_POINTS):
@@ -44,3 +44,55 @@ def tds_ppm(raw_value, temperature_c, coefficients=DEFAULT_TDS_COEFFICIENTS):
     if factor <= 0:
         raise ValueError("Ungültiger Temperaturkompensationsfaktor")
     return uncompensated / factor
+
+
+def convert_telemetry(values, parameters):
+    """Ergänzt Telemetrie um kalibrierte Einheiten und HA-Konvertierungen."""
+    result = dict(values)
+    for key in ("DIST", "TMP", "TUR", "TDS"):
+        if result[key] != "UNKNOWN":
+            result[key] = float(result[key])
+
+    if result["DIST"] != "UNKNOWN":
+        result["DIST"] = round(
+            (result["DIST"] + parameters.get("DIST_OFFSET", 0.0))
+            * parameters.get("DIST_SCALE", 1.0),
+            2,
+        )
+    if result["TMP"] != "UNKNOWN":
+        result["TMP"] = round(
+            (result["TMP"] + parameters.get("TMP_OFFSET", 0.0))
+            * parameters.get("TMP_SCALE", 1.0),
+            2,
+        )
+
+    if result["TUR"] == "UNKNOWN":
+        result["TUR_NTU"] = "UNKNOWN"
+    else:
+        points = [
+            (
+                parameters.get(f"TUR_X{index}", x),
+                parameters.get(f"TUR_Y{index}", y),
+            )
+            for index, (x, y) in enumerate(DEFAULT_TURBIDITY_POINTS, 1)
+        ]
+        try:
+            result["TUR_NTU"] = round(piecewise_linear(result["TUR"], points), 2)
+        except ValueError:
+            result["TUR_NTU"] = "UNKNOWN"
+
+    if result["TDS"] == "UNKNOWN" or result["TMP"] == "UNKNOWN":
+        result["TDS_PPM"] = "UNKNOWN"
+    else:
+        coefficients = tuple(
+            parameters.get(key, default)
+            for key, default in zip(
+                ("TDS_A", "TDS_B", "TDS_C", "TDS_D"),
+                DEFAULT_TDS_COEFFICIENTS,
+            )
+        )
+        try:
+            result["TDS_PPM"] = round(tds_ppm(result["TDS"], result["TMP"], coefficients), 2)
+        except ValueError:
+            result["TDS_PPM"] = "UNKNOWN"
+    return result

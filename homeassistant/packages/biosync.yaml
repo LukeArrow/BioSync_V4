@@ -1,0 +1,111 @@
+---
+input_boolean:
+  biosync_maintenance:
+    name: BioSync Wartungsmodus
+    icon: mdi:wrench
+    initial: false
+
+automation:
+  - id: biosync_recorder_pause_for_maintenance
+    alias: BioSync – Recorder bei Wartung pausieren
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id: input_boolean.biosync_maintenance
+    action:
+      - choose:
+          - conditions:
+              - condition: state
+                entity_id: input_boolean.biosync_maintenance
+                state: "on"
+            sequence:
+              - service: recorder.disable
+        default:
+          - service: recorder.enable
+
+  - id: biosync_tds_alarm
+    alias: BioSync – TDS-Grenzwert
+    mode: single
+    trigger:
+      - platform: state
+        entity_id:
+          - sensor.biosync_v4_tds
+          - input_boolean.biosync_maintenance
+    condition:
+      - condition: state
+        entity_id: input_boolean.biosync_maintenance
+        state: "off"
+      - condition: template
+        value_template: >-
+          {{ states('sensor.biosync_v4_tds') not in
+             ['unknown', 'unavailable'] and
+             states('number.biosync_v4_tds_threshold') not in
+             ['unknown', 'unavailable'] and
+             states('sensor.biosync_v4_tds') | float(0) >
+             states('number.biosync_v4_tds_threshold') | float(0) }}
+    action:
+      - service: persistent_notification.create
+        data:
+          notification_id: biosync_tds_alarm
+          title: BioSync – TDS zu hoch
+          message: >
+            TDS {{ states('sensor.biosync_v4_tds') }} ppm überschreitet den
+            konfigurierten Grenzwert.
+
+  - id: biosync_turbidity_alarm
+    alias: BioSync – Trübungsgrenzwert
+    mode: single
+    trigger:
+      - platform: state
+        entity_id:
+          - sensor.biosync_v4_turbidity
+          - input_boolean.biosync_maintenance
+    condition:
+      - condition: state
+        entity_id: input_boolean.biosync_maintenance
+        state: "off"
+      - condition: template
+        value_template: >-
+          {{ states('sensor.biosync_v4_turbidity') not in
+             ['unknown', 'unavailable'] and
+             states('number.biosync_v4_tur_threshold') not in
+             ['unknown', 'unavailable'] and
+             states('sensor.biosync_v4_turbidity') | float(0) >
+             states('number.biosync_v4_tur_threshold') | float(0) }}
+    action:
+      - service: persistent_notification.create
+        data:
+          notification_id: biosync_turbidity_alarm
+          title: BioSync – Trübung zu hoch
+          message: >
+            Trübung {{ states('sensor.biosync_v4_turbidity') }} NTU
+            überschreitet den konfigurierten Grenzwert.
+
+  - id: biosync_distance_alarm
+    alias: BioSync – Füllstand-Grenzwert
+    mode: single
+    trigger:
+      - platform: state
+        entity_id:
+          - sensor.biosync_v4_distance
+          - input_boolean.biosync_maintenance
+    condition:
+      - condition: state
+        entity_id: input_boolean.biosync_maintenance
+        state: "off"
+      - condition: template
+        value_template: >-
+          {{ states('sensor.biosync_v4_distance') not in
+             ['unknown', 'unavailable'] and
+             states('number.biosync_v4_dist_threshold') not in
+             ['unknown', 'unavailable'] and
+             states('sensor.biosync_v4_distance') | float(0) >
+             states('number.biosync_v4_dist_threshold') | float(0) }}
+    action:
+      - service: persistent_notification.create
+        data:
+          notification_id: biosync_distance_alarm
+          title: BioSync – Füllstand-Grenzwert
+          message: >
+            Abstand {{ states('sensor.biosync_v4_distance') }} cm
+            überschreitet den konfigurierten Grenzwert.
