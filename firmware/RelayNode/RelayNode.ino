@@ -94,7 +94,9 @@ void loop() {
 
   bool changed = !initialized;
   for (uint8_t index = 0; index < 4; ++index) {
+    #if DEBUG_ENABLED
     const uint16_t rawValue = readAverage(SENSOR_PINS[index]);
+    #endif
     const uint8_t next = readLedState(SENSOR_PINS[index], states[index]);
 
     DEBUG_PRINT(LED_NAMES[index]);
