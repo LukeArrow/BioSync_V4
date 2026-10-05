@@ -2,6 +2,19 @@
 #include <OneWire.h>
 #include "SoftUart.h"
 
+// ===== Debug-Konfiguration =====
+// Auf 1 setzen fuer Debug-Ausgabe ueber den seriellen Monitor (115200 Baud),
+// auf 0 setzen um die Ausgabe komplett zu deaktivieren.
+#define DEBUG_ENABLED 0
+
+#if DEBUG_ENABLED
+  #define DEBUG_PRINT(x) Serial.print(x)
+  #define DEBUG_PRINTLN(x) Serial.println(x)
+#else
+  #define DEBUG_PRINT(x)
+  #define DEBUG_PRINTLN(x)
+#endif
+
 const uint8_t TRIG_PIN = 2;
 const uint8_t ECHO_PIN = 3;
 const uint8_t ONEWIRE_PIN = 4;
@@ -47,7 +60,7 @@ float readDistanceCm() {
       ++valid;
     }
     if (sample + 1 < DISTANCE_SAMPLES) {
-      // JSN-SR04T benötigt mindestens 60 ms Abstand zwischen Schallimpulsen.
+      // JSN-SR04T benoetigt mindestens 60 ms Abstand zwischen Schallimpulsen.
       delay(DISTANCE_SAMPLE_SPACING_MS);
     }
   }
@@ -69,6 +82,11 @@ void setup() {
   pinMode(TURBIDITY_PIN, INPUT);
   pinMode(TDS_PIN, INPUT);
   temperatureSensor.begin();
+
+  #if DEBUG_ENABLED
+    Serial.begin(115200);
+    DEBUG_PRINTLN(F("BioSync SensorNode - Debug aktiv"));
+  #endif
 }
 
 void loop() {
@@ -105,5 +123,17 @@ void loop() {
       temperatureText,
       turbidity,
       tds);
+
+  DEBUG_PRINT(F("DIST="));
+  DEBUG_PRINT(distanceText);
+  DEBUG_PRINT(F(" TMP="));
+  DEBUG_PRINT(temperatureText);
+  DEBUG_PRINT(F(" TUR="));
+  DEBUG_PRINT(turbidity);
+  DEBUG_PRINT(F(" TDS="));
+  DEBUG_PRINT(tds);
+  DEBUG_PRINT(F(" -> "));
+  DEBUG_PRINTLN(frame);
+
   sendFrame(RS485_TX_PIN, RS485_DE_PIN, RS485_DELAY_MS, frame);
 }
