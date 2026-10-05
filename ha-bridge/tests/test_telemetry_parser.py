@@ -4,6 +4,7 @@ from biosync_bridge.telemetry_parser import (
     REQUIRED_FIELDS,
     TelemetryParseError,
     parse_config_line,
+    parse_relay_line,
     parse_telemetry_line,
 )
 
@@ -43,6 +44,36 @@ class TelemetryParserTests(unittest.TestCase):
             parse_telemetry_line(
                 "$TELEMETRY;DIST=nan;TMP=2;TUR=3;TDS=4;PUMP_ACTIVE=IDLE;"
                 "PUMP_ERROR=IDLE;VENT_ACTIVE=IDLE;VENT_ERROR=IDLE"
+            )
+
+    def test_relay_line_parses_all_four_fields_without_sensor_fields(self):
+        self.assertEqual(
+            parse_relay_line(
+                "$RELAY;PUMP_ACTIVE=ACTIVE;PUMP_ERROR=IDLE;"
+                "VENT_ACTIVE=UNKNOWN;VENT_ERROR=ERROR"
+            ),
+            {
+                "PUMP_ACTIVE": "ACTIVE",
+                "PUMP_ERROR": "IDLE",
+                "VENT_ACTIVE": "UNKNOWN",
+                "VENT_ERROR": "ERROR",
+            },
+        )
+
+    def test_relay_line_rejects_invalid_state_missing_field_and_wrong_prefix(self):
+        with self.assertRaises(TelemetryParseError):
+            parse_relay_line(
+                "$RELAY;PUMP_ACTIVE=OFF;PUMP_ERROR=IDLE;"
+                "VENT_ACTIVE=IDLE;VENT_ERROR=IDLE"
+            )
+        with self.assertRaises(TelemetryParseError):
+            parse_relay_line(
+                "$RELAY;PUMP_ACTIVE=ACTIVE;PUMP_ERROR=IDLE;VENT_ACTIVE=IDLE"
+            )
+        with self.assertRaises(TelemetryParseError):
+            parse_relay_line(
+                "$TELEMETRY;PUMP_ACTIVE=ACTIVE;PUMP_ERROR=IDLE;"
+                "VENT_ACTIVE=IDLE;VENT_ERROR=IDLE"
             )
 
     def test_config_readback(self):

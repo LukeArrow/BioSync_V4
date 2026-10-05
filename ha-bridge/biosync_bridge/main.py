@@ -14,6 +14,7 @@ from .mqtt_discovery import PARAMETERS, publish_discovery
 from .telemetry_parser import (
     TelemetryParseError,
     parse_config_line,
+    parse_relay_line,
     parse_telemetry_line,
 )
 
@@ -114,6 +115,12 @@ class BioSyncBridge:
         try:
             if line.startswith("$TELEMETRY;"):
                 self._publish_telemetry(parse_telemetry_line(line))
+            elif line.startswith("$RELAY;"):
+                self.client.publish(
+                    f"{ROOT}/relay",
+                    json.dumps(parse_relay_line(line)),
+                    retain=True,
+                )
             elif line.startswith("$CONFIG;"):
                 self.parameters.update(parse_config_line(line))
                 self.client.publish(f"{ROOT}/config", json.dumps(self.parameters), retain=True)
