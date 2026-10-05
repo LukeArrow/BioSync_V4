@@ -65,6 +65,16 @@ Standardmäßig nutzt die Bridge `/dev/ttyACM0` und einen lokalen MQTT-Broker
 `BIOSYNC_MQTT_PORT`, `BIOSYNC_MQTT_USER` und `BIOSYNC_MQTT_PASSWORD` können als
 Umgebungsvariablen angepasst werden.
 
+## Home-Assistant-Add-on
+
+Mit Home Assistant Supervisor lässt sich die Bridge auch als Add-on installieren.
+Im Add-on-Store das Repository `https://github.com/LukeArrow/BioSync_V4`
+hinzufügen und **BioSync V4 Bridge** installieren. USB-Port und MQTT lassen
+sich über die HA-Oberfläche konfigurieren; ein leerer MQTT-Host nutzt automatisch
+den Supervisor-MQTT-Service (z. B. Mosquitto).
+Installation und Optionen: [`ha-addon/biosync_bridge/`](ha-addon/biosync_bridge/).
+Die oben beschriebene Standalone-Nutzung bleibt unverändert.
+
 ## Protokoll (zentral dokumentiert)
 
 RS-485-Frames sind ASCII in spitzen Klammern, mit Zeilenende; es gibt keine
