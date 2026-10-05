@@ -86,6 +86,17 @@ Der Mega gibt einmal pro Sekunde genau diese USB-Felder aus:
 $TELEMETRY;DIST=..;TMP=..;TUR=..;TDS=..;PUMP_ACTIVE=..;PUMP_ERROR=..;VENT_ACTIVE=..;VENT_ERROR=..
 ```
 
+Bei einer Änderung eines Relaiszustands sendet der Mega unabhängig vom
+Telemetrie-Takt zusätzlich sofort eine eigene USB-Zeile:
+
+```text
+$RELAY;PUMP_ACTIVE=..;PUMP_ERROR=..;VENT_ACTIVE=..;VENT_ERROR=..
+```
+
+Die Bridge veröffentlicht diese vier Zustände als JSON auf
+`biosync_v4/relay`; Sensor- und kombinierte Heartbeat-Telemetrie bleiben auf
+`biosync_v4/state`.
+
 `SD`, `MAINT` und `ALARM` gehören nicht zum V4-Protokoll. Fehlende oder
 veraltete RS-485-Daten werden als `UNKNOWN` übertragen. Empfangene
 Nextion-Tastendrücke gehen als Hex-Bytes auf USB:

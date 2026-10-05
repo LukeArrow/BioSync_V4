@@ -32,6 +32,9 @@ SENSORS = {
     "vent_active": ("Lüftung Aktivität", "VENT_ACTIVE", None, None),
     "vent_error": ("Lüftung Fehler", "VENT_ERROR", None, None),
 }
+RELAY_ENTITIES = frozenset(
+    ("pump_active", "pump_error", "vent_active", "vent_error")
+)
 
 
 def publish_discovery(client, root="biosync_v4"):
@@ -47,7 +50,9 @@ def publish_discovery(client, root="biosync_v4"):
             "name": name,
             "unique_id": f"biosync_v4_{slug}",
             "default_entity_id": f"sensor.biosync_v4_{slug}",
-            "state_topic": f"{root}/state",
+            "state_topic": (
+                f"{root}/relay" if slug in RELAY_ENTITIES else f"{root}/state"
+            ),
             "value_template": "{{ value_json." + state_key + " }}",
             "availability_topic": availability,
             "payload_available": "online",

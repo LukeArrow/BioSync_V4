@@ -42,6 +42,7 @@ char relayStates[4][8] = {"UNKNOWN", "UNKNOWN", "UNKNOWN", "UNKNOWN"};
 unsigned long sensorUpdatedAt = 0;
 unsigned long relayUpdatedAt = 0;
 unsigned long lastTelemetryAt = 0;
+bool relayChanged = false;
 
 bool validNumber(const char *text) {
   if (text == NULL || *text == '\0') {
@@ -255,8 +256,14 @@ void parseRelayFrame(char *frame) {
   for (uint8_t index = 0; index < 4; ++index) {
     if (readField(start, fields[index], parsed, sizeof(parsed)) &&
         validRelayState(parsed)) {
+      if (strcmp(relayStates[index], parsed) != 0) {
+        relayChanged = true;
+      }
       strcpy(relayStates[index], parsed);
     } else {
+      if (strcmp(relayStates[index], "UNKNOWN") != 0) {
+        relayChanged = true;
+      }
       strcpy(relayStates[index], "UNKNOWN");
     }
   }
@@ -304,6 +311,17 @@ void sendTelemetry() {
   Serial.print(";TDS=");
   Serial.print(tdsValue);
   Serial.print(";PUMP_ACTIVE=");
+  Serial.print(relayStates[0]);
+  Serial.print(";PUMP_ERROR=");
+  Serial.print(relayStates[1]);
+  Serial.print(";VENT_ACTIVE=");
+  Serial.print(relayStates[2]);
+  Serial.print(";VENT_ERROR=");
+  Serial.println(relayStates[3]);
+}
+
+void sendRelay() {
+  Serial.print("$RELAY;PUMP_ACTIVE=");
   Serial.print(relayStates[0]);
   Serial.print(";PUMP_ERROR=");
   Serial.print(relayStates[1]);
@@ -365,6 +383,10 @@ void loop() {
   readRs485(Serial1, sensorBuffer, sensorLength, true);
   readRs485(Serial3, relayBuffer, relayLength, false);
   forwardNextionInput();
+  if (relayChanged) {
+    relayChanged = false;
+    sendRelay();
+  }
   if (millis() - lastTelemetryAt >= TELEMETRY_INTERVAL_MS) {
     lastTelemetryAt = millis();
     sendTelemetry();

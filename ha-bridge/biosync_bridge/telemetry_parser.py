@@ -13,6 +13,7 @@ TELEMETRY_FIELDS = (
     "VENT_ERROR",
 )
 REQUIRED_FIELDS = frozenset(TELEMETRY_FIELDS)
+RELAY_FIELDS = ("PUMP_ACTIVE", "PUMP_ERROR", "VENT_ACTIVE", "VENT_ERROR")
 RELAY_STATES = frozenset(("IDLE", "ACTIVE", "ERROR", "UNKNOWN"))
 
 
@@ -60,6 +61,22 @@ def parse_telemetry_line(line):
         for key in ("DIST", "TMP", "TUR", "TDS")
     }
     for key in TELEMETRY_FIELDS[4:]:
+        value = fields[key]
+        if value not in RELAY_STATES:
+            raise TelemetryParseError(f"Ungültiger Zustand für {key}: {value}")
+        parsed[key] = value
+    return parsed
+
+
+def parse_relay_line(line):
+    """Parst ``$RELAY`` mit den vier gültigen Relaiszuständen."""
+    fields = _parse_fields(line, "$RELAY")
+    missing = set(RELAY_FIELDS).difference(fields)
+    if missing:
+        raise TelemetryParseError(f"Fehlende Felder: {', '.join(sorted(missing))}")
+
+    parsed = {}
+    for key in RELAY_FIELDS:
         value = fields[key]
         if value not in RELAY_STATES:
             raise TelemetryParseError(f"Ungültiger Zustand für {key}: {value}")
