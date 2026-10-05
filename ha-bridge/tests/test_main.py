@@ -52,11 +52,74 @@ class BridgeReconnectTests(unittest.TestCase):
             self.assertEqual(self.client.subscribe.call_count, 2)
             self.assertEqual(
                 self.client.publish.call_args_list,
-                [call(f"{ROOT}/availability", "online", retain=True)] * 2,
+                [call(f"{ROOT}/availability", "offline", retain=True)] * 2,
             )
             with self.assertLogs("biosync_bridge", level="ERROR"):
                 self.client.on_connect(self.client, None, {}, 1, None)
             self.assertEqual(discovery.call_count, 2)
+
+    def test_usb_loss_is_unavailable_until_fresh_telemetry_after_reconnect(self):
+        telemetry = (
+            "$TELEMETRY;DIST=100;TMP=25;TUR=512;TDS=420;"
+            "PUMP_ACTIVE=IDLE;PUMP_ERROR=IDLE;VENT_ACTIVE=IDLE;VENT_ERROR=IDLE"
+        )
+        self.bridge.serial = MagicMock()
+        self.bridge._handle_line(telemetry)
+        self.assertTrue(self.bridge.available)
+        self.assertEqual(
+            self.client.publish.call_args_list[-1],
+            call(f"{ROOT}/availability", "online", retain=True),
+        )
+        self.bridge.serial = MagicMock()
+        self.bridge.serial.write.side_effect = OSError("USB getrennt")
+        with self.assertLogs("biosync_bridge", level="WARNING"):
+            self.bridge.send_command("GET")
+        self.assertFalse(self.bridge.available)
+        self.assertEqual(
+            self.client.publish.call_args_list[-1],
+            call(f"{ROOT}/availability", "offline", retain=True),
+        )
+        self.client.publish.reset_mock()
+        with (
+            patch("biosync_bridge.main.publish_discovery"),
+            patch.object(self.bridge, "send_command"),
+        ):
+            self.bridge._on_connect(self.client, None, {}, 0, None)
+        self.client.publish.assert_called_once_with(
+            f"{ROOT}/availability", "offline", retain=True
+        )
+        self.bridge._handle_line("$CONFIG;DIST_OFFSET=2")
+        with self.assertLogs("biosync_bridge", level="WARNING"):
+            self.bridge._handle_line("$TELEMETRY;DIST=invalid")
+        self.assertFalse(self.bridge.available)
+        self.bridge._handle_line(telemetry)
+        self.assertFalse(self.bridge.available)
+        self.bridge.serial = MagicMock()
+        self.bridge._handle_line(telemetry)
+        self.assertTrue(self.bridge.available)
+        self.assertEqual(
+            self.client.publish.call_args_list[-1],
+            call(f"{ROOT}/availability", "online", retain=True),
+        )
+
+    def test_usb_read_loss_publishes_offline(self):
+        self.bridge.available = True
+        port = MagicMock()
+        port.readline.side_effect = OSError("USB getrennt")
+        with (
+            patch("biosync_bridge.main.serial.Serial", return_value=port),
+            patch("biosync_bridge.main.time.sleep", side_effect=KeyboardInterrupt()),
+            self.assertLogs("biosync_bridge", level="INFO"),
+        ):
+            self.bridge.run()
+        self.assertFalse(self.bridge.available)
+        self.assertGreaterEqual(
+            self.client.publish.call_args_list.count(
+                call(f"{ROOT}/availability", "offline", retain=True)
+            ),
+            2,
+        )
+        self.assert_shutdown()
 
     def test_initial_usb_failure_retries_then_processes_data(self):
         port = MagicMock()

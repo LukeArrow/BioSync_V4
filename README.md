@@ -86,6 +86,9 @@ Backoff von 1 bis maximal 60 Sekunden; die Versuche werden protokolliert.
 Nach MQTT-Reconnect werden Discovery, Subscriptions und `GET` erneut ausgeführt,
 nach USB-Reconnect wird ebenfalls `GET` gesendet. Während USB getrennt ist,
 werden Kommandos protokolliert und verworfen, nicht später nachgeholt.
+Bei USB-Verlust meldet MQTT die Bridge als `offline`, damit keine alten
+Messwerte als aktuell gelten. Erst neue gültige `$TELEMETRY` setzt sie wieder
+auf `online`; ein MQTT-Reconnect allein reicht dafür nicht.
 
 ## Home-Assistant-Add-on
 

@@ -31,6 +31,7 @@ class BioSyncBridge:
         self.serial = None
         self.serial_lock = threading.Lock()
         self.parameters = {}
+        self.available = False
         self.client = mqtt.Client(
             mqtt.CallbackAPIVersion.VERSION2,
             client_id="biosync-v4-bridge",
@@ -52,7 +53,12 @@ class BioSyncBridge:
         if reason_code != 0:
             LOG.error("MQTT-Verbindung fehlgeschlagen: %s", reason_code)
             return
-        client.publish(f"{ROOT}/availability", "online", retain=True)
+        with self.serial_lock:
+            client.publish(
+                f"{ROOT}/availability",
+                "online" if self.available else "offline",
+                retain=True,
+            )
         publish_discovery(client, ROOT)
         client.subscribe(
             [
@@ -112,10 +118,17 @@ class BioSyncBridge:
                 LOG.warning("USB-Port konnte nicht geschlossen werden: %s", error)
             finally:
                 self.serial = None
+        if self.available:
+            self.available = False
+            self.client.publish(f"{ROOT}/availability", "offline", retain=True)
 
     def _publish_telemetry(self, values):
         result = convert_telemetry(values, self.parameters)
-        self.client.publish(f"{ROOT}/state", json.dumps(result), retain=True)
+        with self.serial_lock:
+            self.client.publish(f"{ROOT}/state", json.dumps(result), retain=True)
+            if self.serial is not None and not self.available:
+                self.available = True
+                self.client.publish(f"{ROOT}/availability", "online", retain=True)
 
     def run(self):
         last_request = time.monotonic()
