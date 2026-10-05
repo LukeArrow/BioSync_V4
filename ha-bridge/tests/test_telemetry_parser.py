@@ -18,10 +18,19 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(result["DIST"], 123.4)
         self.assertEqual(result["TUR"], 512.0)
         self.assertEqual(result["VENT_ACTIVE"], "UNKNOWN")
-        self.assertEqual(REQUIRED_FIELDS, {
-            "DIST", "TMP", "TUR", "TDS", "PUMP_ACTIVE", "PUMP_ERROR",
-            "VENT_ACTIVE", "VENT_ERROR",
-        })
+        self.assertEqual(
+            REQUIRED_FIELDS,
+            {
+                "DIST",
+                "TMP",
+                "TUR",
+                "TDS",
+                "PUMP_ACTIVE",
+                "PUMP_ERROR",
+                "VENT_ACTIVE",
+                "VENT_ERROR",
+            },
+        )
         self.assertFalse({"SD", "MAINT", "ALARM"} & REQUIRED_FIELDS)
 
     def test_unknown_sensor_values_are_preserved(self):
@@ -77,9 +86,13 @@ class TelemetryParserTests(unittest.TestCase):
             )
 
     def test_config_readback(self):
-        self.assertEqual(parse_config_line("$CONFIG;DIST_OFFSET=1.5;TDS_A=0"), {
-            "DIST_OFFSET": 1.5, "TDS_A": 0.0,
-        })
+        self.assertEqual(
+            parse_config_line("$CONFIG;DIST_OFFSET=1.5;TDS_A=0"),
+            {
+                "DIST_OFFSET": 1.5,
+                "TDS_A": 0.0,
+            },
+        )
 
 
 if __name__ == "__main__":

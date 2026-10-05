@@ -1,5 +1,6 @@
 #include <DallasTemperature.h>
 #include <OneWire.h>
+#include "SoftUart.h"
 
 const uint8_t TRIG_PIN = 2;
 const uint8_t ECHO_PIN = 3;
@@ -11,32 +12,14 @@ const uint8_t TURBIDITY_PIN = A0;
 const uint8_t TDS_PIN = A1;
 const unsigned long SAMPLE_INTERVAL_MS = 5000;
 const unsigned long RS485_DELAY_MS = 10;
+const uint8_t DISTANCE_SAMPLES = 5;
+const unsigned long DISTANCE_SAMPLE_SPACING_MS = 60;
 
 OneWire oneWire(ONEWIRE_PIN);
 DallasTemperature temperatureSensor(&oneWire);
 unsigned long lastSample = 0;
 
-void waitForBit(unsigned long deadline) {
-  while ((int32_t)(micros() - deadline) < 0) {
-  }
-}
-
-void sendByte(uint8_t value) {
-  unsigned long deadline = micros();
-  digitalWrite(RS485_TX_PIN, LOW);
-  deadline += 104;
-  waitForBit(deadline);
-  for (uint8_t bit = 0; bit < 8; ++bit) {
-    digitalWrite(RS485_TX_PIN, (value & (1 << bit)) ? HIGH : LOW);
-    deadline += 104;
-    waitForBit(deadline);
-  }
-  digitalWrite(RS485_TX_PIN, HIGH);
-  deadline += 104;
-  waitForBit(deadline);
-}
-
-float readDistanceCm() {
+float readDistanceSampleCm() {
   digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2);
   digitalWrite(TRIG_PIN, HIGH);
@@ -49,16 +32,30 @@ float readDistanceCm() {
   return duration / 58.0f;
 }
 
-void sendFrame(const char *frame) {
-  digitalWrite(RS485_DE_PIN, HIGH);
-  delay(RS485_DELAY_MS);
-  while (*frame) {
-    sendByte(*frame++);
+float readDistanceCm() {
+  float readings[DISTANCE_SAMPLES];
+  uint8_t valid = 0;
+  for (uint8_t sample = 0; sample < DISTANCE_SAMPLES; ++sample) {
+    const float distance = readDistanceSampleCm();
+    if (!isnan(distance)) {
+      uint8_t index = valid;
+      while (index > 0 && readings[index - 1] > distance) {
+        readings[index] = readings[index - 1];
+        --index;
+      }
+      readings[index] = distance;
+      ++valid;
+    }
+    if (sample + 1 < DISTANCE_SAMPLES) {
+      // JSN-SR04T benötigt mindestens 60 ms Abstand zwischen Schallimpulsen.
+      delay(DISTANCE_SAMPLE_SPACING_MS);
+    }
   }
-  sendByte('\r');
-  sendByte('\n');
-  delay(RS485_DELAY_MS);
-  digitalWrite(RS485_DE_PIN, LOW);
+  if (valid < 3) {
+    return NAN;
+  }
+  return valid % 2 ? readings[valid / 2]
+                   : (readings[valid / 2 - 1] + readings[valid / 2]) / 2.0f;
 }
 
 void setup() {
@@ -103,10 +100,10 @@ void loop() {
   snprintf(
       frame,
       sizeof(frame),
-      "<SENSOR;DIST=%s;TMP=%s;TUR=%d;TDS=%d>",
+      "SENSOR;DIST=%s;TMP=%s;TUR=%d;TDS=%d",
       distanceText,
       temperatureText,
       turbidity,
       tds);
-  sendFrame(frame);
+  sendFrame(RS485_TX_PIN, RS485_DE_PIN, RS485_DELAY_MS, frame);
 }
