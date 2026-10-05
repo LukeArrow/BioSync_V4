@@ -29,6 +29,12 @@ if [[ -z "${BIOSYNC_MQTT_HOST}" ]]; then
     BIOSYNC_MQTT_PORT="$(bashio::services 'mqtt' 'port')"
     BIOSYNC_MQTT_USER="$(bashio::services 'mqtt' 'username')"
     BIOSYNC_MQTT_PASSWORD="$(bashio::services 'mqtt' 'password')"
+    if [[ "${BIOSYNC_MQTT_USER}" == "null" ]]; then
+        BIOSYNC_MQTT_USER=""
+    fi
+    if [[ "${BIOSYNC_MQTT_PASSWORD}" == "null" ]]; then
+        BIOSYNC_MQTT_PASSWORD=""
+    fi
 fi
 
 export BIOSYNC_SERIAL BIOSYNC_BAUD BIOSYNC_MQTT_HOST BIOSYNC_MQTT_PORT

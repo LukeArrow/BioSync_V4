@@ -37,7 +37,7 @@ class AddonTests(unittest.TestCase):
         )
         subprocess.run(["bash", "-n", str(script)], check=True)
 
-    def run_start_script(self, options, service_available=True):
+    def run_start_script(self, options, service_available=True, service_options=None):
         environment = {
             key: value for key, value in os.environ.items()
             if not key.startswith(("BIOSYNC_", "OPTION_", "SERVICE_"))
@@ -55,6 +55,9 @@ class AddonTests(unittest.TestCase):
             "SERVICE_password": "test-only-service-value",
         })
         environment.update({f"OPTION_{key}": value for key, value in options.items()})
+        environment.update({
+            f"SERVICE_{key}": value for key, value in (service_options or {}).items()
+        })
         mocks = """
 bashio::config() {
     local key="OPTION_${1}"
@@ -138,6 +141,17 @@ source "$1"
         result = self.run_start_script({"mqtt_host": "broker.example"})
         self.assert_bridge_environment(result, "broker.example", "1883", "", "")
         self.assertEqual(result.stderr, "")
+
+    def test_mqtt_service_allows_missing_credentials(self):
+        for user in ("null", "service-user"):
+            with self.subTest(user=user):
+                result = self.run_start_script({}, service_options={
+                    "username": user, "password": "null",
+                })
+                self.assert_bridge_environment(
+                    result, "core-mosquitto", "1884",
+                    "" if user == "null" else user, "",
+                )
 
     def test_missing_service_without_manual_host_fails_before_bridge_start(self):
         result = self.run_start_script({}, service_available=False)
