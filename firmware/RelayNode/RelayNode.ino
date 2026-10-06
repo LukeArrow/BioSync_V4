@@ -14,7 +14,7 @@ const uint16_t LED_OFF_THRESHOLD = 80;  // darunter: LED aus -> IDLE
 
 const uint8_t AVERAGE_SAMPLES = 5;
 const unsigned long SAMPLE_INTERVAL_MS = 200;
-const unsigned long HEARTBEAT_INTERVAL_MS = 5000;
+const unsigned long HEARTBEAT_INTERVAL_MS = 300000UL;
 const unsigned long RS485_DELAY_MS = 10;
 
 const char *stateNames[] = {"IDLE", "ACTIVE", "ERROR"};

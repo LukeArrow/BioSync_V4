@@ -41,6 +41,26 @@ class TelemetryParserTests(unittest.TestCase):
         self.assertEqual(result["DIST"], "UNKNOWN")
         self.assertEqual(result["TDS"], "UNKNOWN")
 
+    def test_optional_node_statuses_are_parsed_and_old_telemetry_remains_valid(self):
+        old_telemetry = (
+            "$TELEMETRY;DIST=1;TMP=2;TUR=3;TDS=4;PUMP_ACTIVE=IDLE;"
+            "PUMP_ERROR=IDLE;VENT_ACTIVE=IDLE;VENT_ERROR=IDLE"
+        )
+        self.assertNotIn("SENSOR_NODE", parse_telemetry_line(old_telemetry))
+        result = parse_telemetry_line(
+            old_telemetry + ";SENSOR_NODE=ONLINE;RELAY_NODE=OFFLINE"
+        )
+        self.assertEqual(result["SENSOR_NODE"], "ONLINE")
+        self.assertEqual(result["RELAY_NODE"], "OFFLINE")
+
+    def test_invalid_optional_node_status_is_rejected(self):
+        telemetry = (
+            "$TELEMETRY;DIST=1;TMP=2;TUR=3;TDS=4;PUMP_ACTIVE=IDLE;"
+            "PUMP_ERROR=IDLE;VENT_ACTIVE=IDLE;VENT_ERROR=IDLE;SENSOR_NODE=UNKNOWN"
+        )
+        with self.assertRaises(TelemetryParseError):
+            parse_telemetry_line(telemetry)
+
     def test_rejects_missing_fields_invalid_states_and_non_finite_values(self):
         with self.assertRaises(TelemetryParseError):
             parse_telemetry_line("$TELEMETRY;DIST=1")

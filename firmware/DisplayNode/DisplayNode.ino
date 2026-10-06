@@ -2,8 +2,8 @@
 #include "SoftUart.h"
 
 const uint8_t SENSOR_DE_PIN = 10;
-const unsigned long SENSOR_STALE_MS = 15000;
-const unsigned long RELAY_STALE_MS = 15000;
+const unsigned long SENSOR_STALE_MS = 660000UL;
+const unsigned long RELAY_STALE_MS = 660000UL;
 const unsigned long TELEMETRY_INTERVAL_MS = 1000;
 const uint8_t CONFIG_MAGIC = 0xB4;
 const uint8_t CONFIG_VERSION = 1;
@@ -298,6 +298,9 @@ void sendTelemetry() {
   }
   if (relayUpdatedAt == 0 || now - relayUpdatedAt > RELAY_STALE_MS) {
     for (uint8_t index = 0; index < 4; ++index) {
+      if (strcmp(relayStates[index], "UNKNOWN") != 0) {
+        relayChanged = true;
+      }
       strcpy(relayStates[index], "UNKNOWN");
     }
   }
@@ -316,7 +319,17 @@ void sendTelemetry() {
   Serial.print(";VENT_ACTIVE=");
   Serial.print(relayStates[2]);
   Serial.print(";VENT_ERROR=");
-  Serial.println(relayStates[3]);
+  Serial.print(relayStates[3]);
+  Serial.print(";SENSOR_NODE=");
+  Serial.print(
+      sensorUpdatedAt != 0 && now - sensorUpdatedAt <= SENSOR_STALE_MS
+          ? "ONLINE"
+          : "OFFLINE");
+  Serial.print(";RELAY_NODE=");
+  Serial.println(
+      relayUpdatedAt != 0 && now - relayUpdatedAt <= RELAY_STALE_MS
+          ? "ONLINE"
+          : "OFFLINE");
 }
 
 void sendRelay() {

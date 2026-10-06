@@ -16,7 +16,7 @@ RelayNode  ─RS-485─┘               └─Serial2 9600─> Nextion
 - `firmware/SensorNode`: Nano Every, misst Distanz, Temperatur und zwei rohe
   ADC-Werte.
 - `firmware/RelayNode`: Nano Every, liest die vier LED-Lichtsensoren und
-  übermittelt Zustände ereignisbasiert (mit 5-s-Heartbeat).
+  übermittelt Zustände ereignisbasiert (mit 5-Minuten-Heartbeat).
 - `firmware/DisplayNode`: Mega 2560, RS-485-Gateway, USB-Protokoll, EEPROM und
   generische Nextion-Durchleitung. Kein SD, keine lokale Umrechnung,
   Wartungslogik oder Alarmentscheidung.
@@ -118,21 +118,24 @@ Beispiel: XOR über `SENSOR;DIST=123.4;TMP=18.3;TUR=512;TDS=420` ergibt `0x7B`.
 
 Der DisplayNode verwirft Frames mit fehlender, fehlerhafter oder falsch
 formatierter Prüfsumme, ohne Werte oder Empfangszeit zu aktualisieren.
-Nach 15 Sekunden ohne gültigen Frame werden die jeweiligen Werte `UNKNOWN`.
+Nach 11 Minuten ohne gültigen Frame werden die jeweiligen Werte `UNKNOWN` und
+der jeweilige Node-Status wechselt auf `OFFLINE`. Home Assistant zeigt dafür
+die Diagnose-Entities „SensorNode“ und „RelayNode“ als Verbunden/Getrennt an.
 Alle drei Firmwares müssen gemeinsam aktualisiert werden; alte Frames ohne
-`CK` werden nicht unterstützt. Das USB-Protokoll bleibt unverändert.
+`CK` werden nicht unterstützt. Die vorhandenen USB-Felder bleiben bestehen;
+`$TELEMETRY` wird nur um die beiden Node-Statusfelder erweitert. Die Bridge
+akzeptiert weiterhin Telemetriezeilen älterer Firmware ohne diese Felder.
 
 `DIST` ist Zentimeter, `TMP` Grad Celsius, `TUR` und `TDS` sind unveränderte
 ADC-Werte. Ein nicht verfügbarer Messwert/Zustand lautet `UNKNOWN`, ein echter
-Ruhezustand `IDLE`. SensorNode sendet alle 5 Sekunden, RelayNode bei Änderung
-und zusätzlich alle 5 Sekunden.
+Ruhezustand `IDLE`. SensorNode misst sofort nach dem Start und danach alle
+5 Minuten. RelayNode sendet bei Änderung sofort und zusätzlich alle 5 Minuten.
 
 Die Distanz ist der Median aus fünf Ultraschallmessungen mit mindestens 60 ms
 Abstand zwischen Triggern. Timeouts werden ausgeschlossen; bei weniger als
 drei gültigen Messungen wird `UNKNOWN` gesendet. Bei vier gültigen Messungen
 wird das Mittel der beiden mittleren Werte verwendet. Die Messserie braucht
-einschließlich der maximalen Echo-Timeouts höchstens etwa 390 ms und bleibt
-mit der Temperaturmessung innerhalb des 5-s-Takts.
+einschließlich der maximalen Echo-Timeouts höchstens etwa 390 ms.
 
 Das RelayNode-LED-Mapping ist A0 → `PUMP_ACTIVE`, A1 → `PUMP_ERROR`,
 A2 → `VENT_ACTIVE`, A3 → `VENT_ERROR`. Die Error-Kanäle (A1/A3) liefern bei
@@ -143,6 +146,25 @@ Der Mega gibt einmal pro Sekunde genau diese USB-Felder aus:
 
 ```text
 $TELEMETRY;DIST=..;TMP=..;TUR=..;TDS=..;PUMP_ACTIVE=..;PUMP_ERROR=..;VENT_ACTIVE=..;VENT_ERROR=..
+```
+
+Die beiden letzten Felder `SENSOR_NODE` und `RELAY_NODE` melden `ONLINE` oder
+`OFFLINE`. Die Bridge macht daraus die Entities
+`binary_sensor.biosync_v4_sensor_node` („SensorNode“) und
+`binary_sensor.biosync_v4_relay_node` („RelayNode“). Eine Automation für beide:
+
+```yaml
+alias: BioSync – Gerät meldet sich nicht
+triggers:
+  - trigger: state
+    entity_id:
+      - binary_sensor.biosync_v4_sensor_node
+      - binary_sensor.biosync_v4_relay_node
+    to: "off"
+actions:
+  - action: notify.notify
+    data:
+      message: "{{ trigger.to_state.name }} meldet sich seit über 10 Minuten nicht mehr!"
 ```
 
 Bei einer Änderung eines Relaiszustands sendet der Mega unabhängig vom

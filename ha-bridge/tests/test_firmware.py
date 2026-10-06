@@ -82,13 +82,19 @@ char *dtostrf(double value, signed char width, unsigned char precision, char *ou
   return out;
 }
 struct HardwareSerial {
+  std::string output;
   void begin(unsigned long) {}
   int available() { return 0; }
   int read() { return 0; }
   void write(uint8_t) {}
+  void print(const char *value) { output += value; }
+  void print(char *value) { output += value; }
+  void print(char value) { output += value; }
   template <typename T> void print(T) {}
   template <typename T> void print(T, int) {}
   void println() {}
+  void println(const char *value) { output += value; output += '\n'; }
+  void println(char *value) { output += value; output += '\n'; }
   template <typename T> void println(T) {}
 };
 HardwareSerial Serial, Serial1, Serial2, Serial3;
@@ -256,26 +262,66 @@ class FirmwareLogicTests(unittest.TestCase):
 """,
         )
 
-    def test_sensor_loop_emits_checksummed_unknown_and_meets_five_second_budget(self):
+    def test_sensor_loop_samples_immediately_then_every_five_minutes(self):
         expected = checked_frame("SENSOR;DIST=UNKNOWN;TMP=18.3;TUR=512;TDS=512")
         self.run_sketch(
             FIRMWARE / "SensorNode" / "SensorNode.ino",
             f"""
-  clockUs = 5000000;
+  clockUs = 0;
   pulses = {{0, 0, 0, 0, 0}};
-  const uint64_t started = clockUs;
   loop();
   assert(transmitted == {json.dumps(expected + chr(13) + chr(10))});
-  assert(clockUs - started < 5000000);
   const size_t firstLength = transmitted.size();
   loop();
   assert(transmitted.size() == firstLength);
-  clockUs = 10000000;
+  clockUs = 300000000;
   pulses = {{5800, 1160, 1740, 29000, 2320}};
   pulseIndex = 0;
   loop();
   assert(transmitted.find("DIST=40.0") != std::string::npos);
+  const size_t secondLength = transmitted.size();
+  loop();
+  assert(transmitted.size() == secondLength);
 """,
+        )
+
+    def test_display_reports_node_status_and_publishes_relay_stale_change(self):
+        self.run_sketch(
+            FIRMWARE / "DisplayNode" / "DisplayNode.ino",
+            r"""
+  assert(SENSOR_STALE_MS == 660000UL && RELAY_STALE_MS == 660000UL);
+  clockUs = 700000000;
+  sensorUpdatedAt = 1;
+  relayUpdatedAt = 1;
+  strcpy(relayStates[0], "ACTIVE");
+  relayChanged = false;
+  loop();
+  assert(relayChanged);
+  assert(strcmp(relayStates[0], "UNKNOWN") == 0);
+  assert(
+      Serial.output.find(";SENSOR_NODE=OFFLINE;RELAY_NODE=OFFLINE") !=
+      std::string::npos);
+  loop();
+  assert(!relayChanged);
+  assert(Serial.output.find("$RELAY;PUMP_ACTIVE=UNKNOWN") != std::string::npos);
+  Serial.output.clear();
+  sensorUpdatedAt = millis();
+  relayUpdatedAt = millis();
+  sendTelemetry();
+  assert(
+      Serial.output.find(";SENSOR_NODE=ONLINE;RELAY_NODE=ONLINE") !=
+      std::string::npos);
+""",
+        )
+
+    def test_node_heartbeat_intervals_are_five_minutes(self):
+        self.run_sketch(
+            FIRMWARE / "RelayNode" / "RelayNode.ino",
+            "assert(HEARTBEAT_INTERVAL_MS == 300000UL);",
+        )
+        self.run_sketch(
+            FIRMWARE / "SensorNode" / "SensorNode.ino",
+            "assert(SAMPLE_INTERVAL_MS == 300000UL);",
         )
 
     def test_relay_mapping_and_error_fields_are_only_error_or_idle(self):

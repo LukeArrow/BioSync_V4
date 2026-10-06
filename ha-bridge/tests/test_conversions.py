@@ -70,6 +70,8 @@ class ConversionTests(unittest.TestCase):
             "PUMP_ERROR": "UNKNOWN",
             "VENT_ACTIVE": "ACTIVE",
             "VENT_ERROR": "IDLE",
+            "SENSOR_NODE": "ONLINE",
+            "RELAY_NODE": "OFFLINE",
         }
         converted = convert_telemetry(
             values,
@@ -91,6 +93,8 @@ class ConversionTests(unittest.TestCase):
             },
         )
         self.assertEqual(converted["DIST"], 24)
+        self.assertEqual(converted["SENSOR_NODE"], "ONLINE")
+        self.assertEqual(converted["RELAY_NODE"], "OFFLINE")
         self.assertEqual(converted["TMP"], 52)
         self.assertEqual(converted["TUR_NTU"], 50)
         self.assertAlmostEqual(converted["TDS_PPM"], (824 - 100) / 1.54, places=2)

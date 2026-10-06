@@ -23,7 +23,7 @@ const uint8_t RS485_RX_PIN = 7;
 const uint8_t RS485_TX_PIN = 6;
 const uint8_t TURBIDITY_PIN = A0;
 const uint8_t TDS_PIN = A1;
-const unsigned long SAMPLE_INTERVAL_MS = 5000;
+const unsigned long SAMPLE_INTERVAL_MS = 300000UL;
 const unsigned long RS485_DELAY_MS = 10;
 const uint8_t DISTANCE_SAMPLES = 5;
 const unsigned long DISTANCE_SAMPLE_SPACING_MS = 60;
@@ -31,6 +31,7 @@ const unsigned long DISTANCE_SAMPLE_SPACING_MS = 60;
 OneWire oneWire(ONEWIRE_PIN);
 DallasTemperature temperatureSensor(&oneWire);
 unsigned long lastSample = 0;
+bool firstRun = true;
 
 float readDistanceSampleCm() {
   digitalWrite(TRIG_PIN, LOW);
@@ -91,9 +92,10 @@ void setup() {
 
 void loop() {
   const unsigned long now = millis();
-  if (now - lastSample < SAMPLE_INTERVAL_MS) {
+  if (!firstRun && now - lastSample < SAMPLE_INTERVAL_MS) {
     return;
   }
+  firstRun = false;
   lastSample = now;
 
   const float distance = readDistanceCm();
