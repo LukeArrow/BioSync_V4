@@ -17,6 +17,12 @@ RELAY_FIELDS = ("PUMP_ACTIVE", "PUMP_ERROR", "VENT_ACTIVE", "VENT_ERROR")
 RELAY_STATES = frozenset(("IDLE", "ACTIVE", "ERROR", "UNKNOWN"))
 NODE_STATUS_FIELDS = ("SENSOR_NODE", "RELAY_NODE")
 NODE_STATUSES = frozenset(("ONLINE", "OFFLINE"))
+RAW_VALUE_LIMITS = {
+    "DIST": (0.0, 500.0),
+    "TMP": (-20.0, 60.0),
+    "TUR": (0.0, 1023.0),
+    "TDS": (0.0, 1023.0),
+}
 
 
 class TelemetryParseError(ValueError):
@@ -58,10 +64,12 @@ def parse_telemetry_line(line):
     if missing:
         raise TelemetryParseError(f"Fehlende Felder: {', '.join(sorted(missing))}")
 
-    parsed = {
-        key: _number_or_unknown(fields[key], key)
-        for key in ("DIST", "TMP", "TUR", "TDS")
-    }
+    parsed = {}
+    for key, (minimum, maximum) in RAW_VALUE_LIMITS.items():
+        value = _number_or_unknown(fields[key], key)
+        parsed[key] = (
+            value if value == "UNKNOWN" or minimum <= value <= maximum else "UNKNOWN"
+        )
     for key in TELEMETRY_FIELDS[4:]:
         value = fields[key]
         if value not in RELAY_STATES:
@@ -90,17 +98,6 @@ def parse_relay_line(line):
         if value not in RELAY_STATES:
             raise TelemetryParseError(f"Ungültiger Zustand für {key}: {value}")
         parsed[key] = value
-    return parsed
-
-
-def parse_config_line(line):
-    """Parst einen ``$CONFIG``-Readback und validiert Zahlenwerte."""
-    fields = _parse_fields(line, "$CONFIG")
-    parsed = {}
-    for key, value in fields.items():
-        if not key.replace("_", "").isalnum():
-            raise TelemetryParseError(f"Ungültiger Parametername: {key}")
-        parsed[key] = _number_or_unknown(value, key)
     return parsed
 
 

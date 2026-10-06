@@ -9,11 +9,9 @@ import time
 import paho.mqtt.client as mqtt
 import serial
 
-from .conversions import convert_telemetry
-from .mqtt_discovery import PARAMETERS, publish_discovery
+from .mqtt_discovery import publish_discovery
 from .telemetry_parser import (
     TelemetryParseError,
-    parse_config_line,
     parse_relay_line,
     parse_telemetry_line,
 )
@@ -30,7 +28,6 @@ class BioSyncBridge:
         self.baud = baud
         self.serial = None
         self.serial_lock = threading.Lock()
-        self.parameters = {}
         self.available = False
         self.client = mqtt.Client(
             mqtt.CallbackAPIVersion.VERSION2,
@@ -60,14 +57,8 @@ class BioSyncBridge:
                 retain=True,
             )
         publish_discovery(client, ROOT)
-        client.subscribe(
-            [
-                (f"{ROOT}/command", 0),
-                (f"{ROOT}/command/nextion", 0),
-                (f"{ROOT}/number/+/set", 0),
-            ]
-        )
-        self.send_command("GET")
+        client.publish(f"{ROOT}/config", "", retain=True)
+        client.subscribe([(f"{ROOT}/command", 0), (f"{ROOT}/command/nextion", 0)])
 
     def _on_message(self, client, userdata, message):
         payload = message.payload.decode("utf-8", errors="replace").strip()
@@ -81,22 +72,8 @@ class BioSyncBridge:
             else:
                 LOG.warning("Ungültiges Nextion-Kommando verworfen")
         elif message.topic == f"{ROOT}/command":
-            if payload in ("GET", "STATUS_REQUEST"):
+            if payload == "STATUS_REQUEST":
                 self.send_command(payload)
-        elif message.topic.startswith(f"{ROOT}/number/"):
-            name = message.topic.rsplit("/", 2)[-2]
-            if name not in PARAMETERS:
-                return
-            try:
-                value = float(payload)
-            except ValueError:
-                LOG.warning("Ungültiger Parameterwert für %s", name)
-                return
-            minimum, maximum, _, _ = PARAMETERS[name]
-            if not minimum <= value <= maximum:
-                LOG.warning("Parameterwert außerhalb des Bereichs: %s", name)
-                return
-            self.send_command(f"SET {name} {value:.8g}")
 
     def send_command(self, command):
         with self.serial_lock:
@@ -123,15 +100,13 @@ class BioSyncBridge:
             self.client.publish(f"{ROOT}/availability", "offline", retain=True)
 
     def _publish_telemetry(self, values):
-        result = convert_telemetry(values, self.parameters)
         with self.serial_lock:
-            self.client.publish(f"{ROOT}/state", json.dumps(result), retain=True)
+            self.client.publish(f"{ROOT}/state", json.dumps(values), retain=True)
             if self.serial is not None and not self.available:
                 self.available = True
                 self.client.publish(f"{ROOT}/availability", "online", retain=True)
 
     def run(self):
-        last_request = time.monotonic()
         retry_delay = RECONNECT_MIN_DELAY
         try:
             self.client.loop_start()
@@ -146,8 +121,7 @@ class BioSyncBridge:
                             )
                         raw = self.serial.readline()
                     if reopened:
-                        self.send_command("GET")
-                        last_request = time.monotonic()
+                        LOG.info("USB-Verbindung hergestellt")
                 except (serial.SerialException, OSError) as error:
                     LOG.warning(
                         "USB-Verbindung verloren: %s; neuer Versuch in %s s",
@@ -169,9 +143,6 @@ class BioSyncBridge:
                     time.sleep(retry_delay)
                     retry_delay = min(retry_delay * 2, RECONNECT_MAX_DELAY)
                     continue
-                if time.monotonic() - last_request > 30:
-                    self.send_command("GET")
-                    last_request = time.monotonic()
         except KeyboardInterrupt:
             pass
         finally:
@@ -190,11 +161,6 @@ class BioSyncBridge:
                     f"{ROOT}/relay",
                     json.dumps(parse_relay_line(line)),
                     retain=True,
-                )
-            elif line.startswith("$CONFIG;"):
-                self.parameters.update(parse_config_line(line))
-                self.client.publish(
-                    f"{ROOT}/config", json.dumps(self.parameters), retain=True
                 )
             elif line.startswith("$NEXTION;"):
                 self.client.publish(
