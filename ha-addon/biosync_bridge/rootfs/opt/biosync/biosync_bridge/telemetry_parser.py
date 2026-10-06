@@ -15,6 +15,8 @@ TELEMETRY_FIELDS = (
 REQUIRED_FIELDS = frozenset(TELEMETRY_FIELDS)
 RELAY_FIELDS = ("PUMP_ACTIVE", "PUMP_ERROR", "VENT_ACTIVE", "VENT_ERROR")
 RELAY_STATES = frozenset(("IDLE", "ACTIVE", "ERROR", "UNKNOWN"))
+NODE_STATUS_FIELDS = ("SENSOR_NODE", "RELAY_NODE")
+NODE_STATUSES = frozenset(("ONLINE", "OFFLINE"))
 
 
 class TelemetryParseError(ValueError):
@@ -65,6 +67,13 @@ def parse_telemetry_line(line):
         if value not in RELAY_STATES:
             raise TelemetryParseError(f"Ungültiger Zustand für {key}: {value}")
         parsed[key] = value
+    for key in NODE_STATUS_FIELDS:
+        if key in fields:
+            if fields[key] not in NODE_STATUSES:
+                raise TelemetryParseError(
+                    f"Ungültiger Zustand für {key}: {fields[key]}"
+                )
+            parsed[key] = fields[key]
     return parsed
 
 

@@ -65,3 +65,22 @@ Bei Änderung von `mqtt_prefix` auch die festen `biosync_v4/...`-Topics im
 HA-Paket und eigenen Automationen anpassen.
 
 Die Standalone-Nutzung aus `ha-bridge/` bleibt weiterhin möglich.
+
+SensorNode misst sofort beim Start und anschließend alle fünf Minuten. RelayNode
+sendet Änderungen sofort und zusätzlich alle fünf Minuten. Meldet sich ein Node
+elf Minuten lang nicht, zeigt Home Assistant die Diagnose-Entity „SensorNode“
+oder „RelayNode“ als getrennt an. Eine Beispiel-Automation:
+
+```yaml
+alias: BioSync – Gerät meldet sich nicht
+triggers:
+  - trigger: state
+    entity_id:
+      - binary_sensor.biosync_v4_sensor_node
+      - binary_sensor.biosync_v4_relay_node
+    to: "off"
+actions:
+  - action: notify.notify
+    data:
+      message: "{{ trigger.to_state.name }} meldet sich seit über 10 Minuten nicht mehr!"
+```

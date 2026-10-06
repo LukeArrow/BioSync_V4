@@ -51,7 +51,13 @@ def publish_discovery(client, root="biosync_v4"):
             "state_topic": (
                 f"{root}/relay" if slug in RELAY_ENTITIES else f"{root}/state"
             ),
-            "value_template": "{{ value_json." + state_key + " }}",
+            "value_template": (
+                "{% set v = value_json."
+                + state_key
+                + " %}{{ v if v != 'UNKNOWN' else None }}"
+                if unit or device_class
+                else "{{ value_json." + state_key + " }}"
+            ),
             "availability_topic": availability,
             "payload_available": "online",
             "payload_not_available": "offline",
@@ -66,6 +72,37 @@ def publish_discovery(client, root="biosync_v4"):
         client.publish(
             f"homeassistant/sensor/biosync_v4/{slug}/config",
             _json(config),
+            retain=True,
+        )
+
+    for slug, name, state_key in (
+        ("sensor_node", "SensorNode", "SENSOR_NODE"),
+        ("relay_node", "RelayNode", "RELAY_NODE"),
+    ):
+        client.publish(
+            f"homeassistant/binary_sensor/biosync_v4/{slug}/config",
+            _json(
+                {
+                    "name": name,
+                    "unique_id": f"biosync_v4_{slug}",
+                    "default_entity_id": f"binary_sensor.biosync_v4_{slug}",
+                    "state_topic": f"{root}/state",
+                    "value_template": (
+                        "{% set v = value_json."
+                        + state_key
+                        + " %}{{ 'ON' if v == 'ONLINE' else "
+                        "'OFF' if v == 'OFFLINE' else None }}"
+                    ),
+                    "payload_on": "ON",
+                    "payload_off": "OFF",
+                    "device_class": "connectivity",
+                    "entity_category": "diagnostic",
+                    "availability_topic": availability,
+                    "payload_available": "online",
+                    "payload_not_available": "offline",
+                    "device": device,
+                }
+            ),
             retain=True,
         )
 
