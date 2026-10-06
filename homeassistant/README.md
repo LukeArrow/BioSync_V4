@@ -24,6 +24,13 @@ eine Kalibrierung im DisplayNode-EEPROM gibt es nicht.
 Beim ersten Start initialisiert eine Automation die Helfer mit den im Paket
 dokumentierten Beispielwerten; danach bleiben manuelle Anpassungen erhalten.
 
+| Messgröße | Kalibrier-Entities |
+|---|---|
+| Distanz | `input_number.biosync_v4_dist_offset`, `input_number.biosync_v4_dist_scale` |
+| Temperatur | `input_number.biosync_v4_tmp_offset`, `input_number.biosync_v4_tmp_scale` |
+| Trübung | `input_number.biosync_v4_tur_x1` bis `_x3` und `input_number.biosync_v4_tur_y1` bis `_y3` |
+| TDS | `input_number.biosync_v4_tds_a` bis `_d` |
+
 Die Grenzwerte sind ebenfalls `input_number`-Helfer:
 `input_number.biosync_v4_tds_threshold`,
 `input_number.biosync_v4_tur_threshold` und

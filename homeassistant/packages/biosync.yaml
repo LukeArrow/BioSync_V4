@@ -116,7 +116,10 @@ template:
           {% set offset = states('input_number.biosync_v4_dist_offset') %}
           {% set scale = states('input_number.biosync_v4_dist_scale') %}
           {% if is_number(raw) and is_number(offset) and is_number(scale) %}
-            {{ ((raw | float + offset | float) * (scale | float)) | round(2) }}
+            {% set raw_value = raw | float %}
+            {% set corrected_offset = offset | float %}
+            {% set scale_factor = scale | float %}
+            {{ ((raw_value + corrected_offset) * scale_factor) | round(2) }}
           {% else %}
             {{ none }}
           {% endif %}
@@ -131,7 +134,10 @@ template:
           {% set offset = states('input_number.biosync_v4_tmp_offset') %}
           {% set scale = states('input_number.biosync_v4_tmp_scale') %}
           {% if is_number(raw) and is_number(offset) and is_number(scale) %}
-            {{ ((raw | float + offset | float) * (scale | float)) | round(2) }}
+            {% set raw_value = raw | float %}
+            {% set corrected_offset = offset | float %}
+            {% set scale_factor = scale | float %}
+            {{ ((raw_value + corrected_offset) * scale_factor) | round(2) }}
           {% else %}
             {{ none }}
           {% endif %}
@@ -177,8 +183,12 @@ template:
             {% set factor = 1 + 0.02 * (temperature | float - 25) %}
             {% if factor > 0 %}
               {% set raw_value = raw | float %}
-              {% set polynomial = (((a | float * raw_value + b | float)
-                  * raw_value + c | float) * raw_value + d | float) %}
+              {% set a_value = a | float %}
+              {% set b_value = b | float %}
+              {% set c_value = c | float %}
+              {% set d_value = d | float %}
+              {% set polynomial = ((a_value * raw_value + b_value)
+                  * raw_value + c_value) * raw_value + d_value %}
               {{ (polynomial / factor) | round(2) }}
             {% else %}
               {{ none }}

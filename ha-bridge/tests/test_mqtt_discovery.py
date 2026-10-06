@@ -12,6 +12,7 @@ class MqttDiscoveryTests(unittest.TestCase):
         configs = {
             call.args[0]: json.loads(call.args[1])
             for call in client.publish.call_args_list
+            if call.args[1]
         }
 
         for slug, name, key in (
@@ -39,7 +40,7 @@ class MqttDiscoveryTests(unittest.TestCase):
                 self.assertEqual(config["availability_topic"], "test_root/availability")
                 self.assertEqual(
                     config["device"],
-                    configs["homeassistant/sensor/biosync_v4/distance/config"][
+                    configs["homeassistant/sensor/biosync_v4/distance_raw/config"][
                         "device"
                     ],
                 )
@@ -50,6 +51,7 @@ class MqttDiscoveryTests(unittest.TestCase):
         configs = {
             call.args[0]: json.loads(call.args[1])
             for call in client.publish.call_args_list
+            if call.args[1]
         }
         for slug, key in (
             ("distance_raw", "DIST"),
@@ -75,14 +77,10 @@ class MqttDiscoveryTests(unittest.TestCase):
             if call.args[1] == "" and call.kwargs.get("retain") is True
         }
         for slug in ("distance", "temperature", "turbidity", "tds"):
-            self.assertIn(
-                f"homeassistant/sensor/biosync_v4/{slug}/config", cleared
-            )
+            self.assertIn(f"homeassistant/sensor/biosync_v4/{slug}/config", cleared)
         for name in ("dist_offset", "tur_x1", "tds_a", "tds_threshold"):
             self.assertIn(f"homeassistant/number/biosync_v4/{name}/config", cleared)
-        self.assertIn(
-            "homeassistant/button/biosync_v4/read_config/config", cleared
-        )
+        self.assertIn("homeassistant/button/biosync_v4/read_config/config", cleared)
 
 
 if __name__ == "__main__":

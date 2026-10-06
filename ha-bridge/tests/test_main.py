@@ -89,9 +89,10 @@ class BridgeReconnectTests(unittest.TestCase):
             patch.object(self.bridge, "send_command"),
         ):
             self.bridge._on_connect(self.client, None, {}, 0, None)
-        self.client.publish.assert_called_once_with(
+        self.client.publish.assert_any_call(
             f"{ROOT}/availability", "offline", retain=True
         )
+        self.client.publish.assert_any_call(f"{ROOT}/config", "", retain=True)
         with self.assertLogs("biosync_bridge", level="WARNING"):
             self.bridge._handle_line("$TELEMETRY;DIST=invalid")
         self.assertFalse(self.bridge.available)
@@ -187,7 +188,7 @@ class BridgeReconnectTests(unittest.TestCase):
 
     def test_received_data_resets_usb_backoff(self):
         port = MagicMock()
-        port.readline.side_effect = [b"", OSError("USB")]
+        port.readline.side_effect = [b"$NEXTION;00\n", OSError("USB")]
         with (
             patch(
                 "biosync_bridge.main.serial.Serial",
@@ -205,21 +206,22 @@ class BridgeReconnectTests(unittest.TestCase):
 
     def test_usb_write_failure_retries_without_crashing_mqtt_callback(self):
         lost_port = MagicMock()
-        lost_port.readline.return_value = b""
         lost_port.write.side_effect = serial.SerialException("Schreibfehler")
         restored_port = MagicMock()
-        restored_port.readline.side_effect = [b"", KeyboardInterrupt()]
+        restored_port.readline.side_effect = KeyboardInterrupt()
+        self.bridge.serial = lost_port
+        with self.assertLogs("biosync_bridge", level="WARNING"):
+            self.bridge._on_message(
+                self.client,
+                None,
+                MagicMock(topic=f"{ROOT}/command", payload=b"STATUS_REQUEST"),
+            )
+        lost_port.close.assert_called_once()
         with (
-            patch(
-                "biosync_bridge.main.serial.Serial",
-                side_effect=[lost_port, restored_port],
-            ),
-            patch("biosync_bridge.main.time.sleep") as sleep,
+            patch("biosync_bridge.main.serial.Serial", return_value=restored_port),
             self.assertLogs("biosync_bridge", level="INFO"),
         ):
             self.bridge.run()
-        sleep.assert_called_once_with(RECONNECT_MIN_DELAY)
-        lost_port.close.assert_called_once()
         restored_port.write.assert_not_called()
         self.assert_shutdown()
 

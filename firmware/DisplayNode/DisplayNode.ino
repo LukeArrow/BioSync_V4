@@ -23,6 +23,15 @@ unsigned long relayUpdatedAt = 0;
 unsigned long lastTelemetryAt = 0;
 bool relayChanged = false;
 
+bool validNumber(const char *text) {
+  if (text == NULL || *text == '\0') {
+    return false;
+  }
+  char *end = NULL;
+  const double value = strtod(text, &end);
+  return end != text && *end == '\0' && isfinite(value);
+}
+
 void handleUsbCommand(char *command) {
   if (strncmp(command, "NEX ", 4) == 0) {
     const char *nextionCommand = command + 4;

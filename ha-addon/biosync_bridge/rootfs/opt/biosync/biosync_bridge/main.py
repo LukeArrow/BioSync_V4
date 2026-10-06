@@ -58,9 +58,7 @@ class BioSyncBridge:
             )
         publish_discovery(client, ROOT)
         client.publish(f"{ROOT}/config", "", retain=True)
-        client.subscribe(
-            [(f"{ROOT}/command", 0), (f"{ROOT}/command/nextion", 0)]
-        )
+        client.subscribe([(f"{ROOT}/command", 0), (f"{ROOT}/command/nextion", 0)])
 
     def _on_message(self, client, userdata, message):
         payload = message.payload.decode("utf-8", errors="replace").strip()

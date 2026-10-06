@@ -114,5 +114,6 @@ class TelemetryParserTests(unittest.TestCase):
                 "VENT_ACTIVE=IDLE;VENT_ERROR=IDLE"
             )
 
+
 if __name__ == "__main__":
     unittest.main()

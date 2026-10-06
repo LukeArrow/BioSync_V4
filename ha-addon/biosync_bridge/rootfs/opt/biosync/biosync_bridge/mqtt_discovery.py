@@ -27,10 +27,23 @@ def publish_discovery(client, root="biosync_v4"):
         )
 
     for name in (
-        "dist_offset", "dist_scale", "tmp_offset", "tmp_scale",
-        "tur_x1", "tur_y1", "tur_x2", "tur_y2", "tur_x3", "tur_y3",
-        "tds_a", "tds_b", "tds_c", "tds_d",
-        "dist_threshold", "tur_threshold", "tds_threshold",
+        "dist_offset",
+        "dist_scale",
+        "tmp_offset",
+        "tmp_scale",
+        "tur_x1",
+        "tur_y1",
+        "tur_x2",
+        "tur_y2",
+        "tur_x3",
+        "tur_y3",
+        "tds_a",
+        "tds_b",
+        "tds_c",
+        "tds_d",
+        "dist_threshold",
+        "tur_threshold",
+        "tds_threshold",
     ):
         client.publish(
             f"homeassistant/number/biosync_v4/{name}/config", "", retain=True
