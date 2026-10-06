@@ -1,34 +1,12 @@
-#include <EEPROM.h>
 #include "SoftUart.h"
 
 const uint8_t SENSOR_DE_PIN = 10;
 const unsigned long SENSOR_STALE_MS = 660000UL;
 const unsigned long RELAY_STALE_MS = 660000UL;
 const unsigned long TELEMETRY_INTERVAL_MS = 1000;
-const uint8_t CONFIG_MAGIC = 0xB4;
-const uint8_t CONFIG_VERSION = 1;
-const uint8_t CONFIG_PARAMETER_COUNT = 17;
 const uint8_t FRAME_BUFFER_SIZE = 160;
 const uint8_t USB_BUFFER_SIZE = 160;
 
-const char *PARAMETER_NAMES[CONFIG_PARAMETER_COUNT] = {
-    "DIST_OFFSET", "DIST_SCALE", "TMP_OFFSET", "TMP_SCALE",
-    "TUR_X1", "TUR_Y1", "TUR_X2", "TUR_Y2", "TUR_X3", "TUR_Y3",
-    "TDS_A", "TDS_B", "TDS_C", "TDS_D",
-    "DIST_THRESHOLD", "TUR_THRESHOLD", "TDS_THRESHOLD"};
-const float DEFAULT_PARAMETERS[CONFIG_PARAMETER_COUNT] = {
-    0.0f, 1.0f, 0.0f, 1.0f,
-    0.0f, 0.0f, 512.0f, 500.0f, 1023.0f, 1000.0f,
-    0.0f, 0.0f, 2.34f, -622.0f,
-    200.0f, 1000.0f, 1000.0f};
-
-struct StoredConfig {
-  uint8_t magic;
-  uint8_t version;
-  float values[CONFIG_PARAMETER_COUNT];
-};
-
-StoredConfig config;
 char sensorBuffer[FRAME_BUFFER_SIZE];
 char relayBuffer[FRAME_BUFFER_SIZE];
 char usbBuffer[USB_BUFFER_SIZE];
@@ -45,85 +23,7 @@ unsigned long relayUpdatedAt = 0;
 unsigned long lastTelemetryAt = 0;
 bool relayChanged = false;
 
-bool validNumber(const char *text) {
-  if (text == NULL || *text == '\0') {
-    return false;
-  }
-  char *end = NULL;
-  const double value = strtod(text, &end);
-  return end != text && *end == '\0' && isfinite(value);
-}
-
-void resetConfig() {
-  config.magic = CONFIG_MAGIC;
-  config.version = CONFIG_VERSION;
-  for (uint8_t index = 0; index < CONFIG_PARAMETER_COUNT; ++index) {
-    config.values[index] = DEFAULT_PARAMETERS[index];
-  }
-  EEPROM.put(0, config);
-}
-
-void loadConfig() {
-  EEPROM.get(0, config);
-  if (config.magic != CONFIG_MAGIC || config.version != CONFIG_VERSION) {
-    resetConfig();
-    return;
-  }
-  for (uint8_t index = 0; index < CONFIG_PARAMETER_COUNT; ++index) {
-    if (!isfinite(config.values[index])) {
-      resetConfig();
-      return;
-    }
-  }
-}
-
-int8_t parameterIndex(const char *name) {
-  for (uint8_t index = 0; index < CONFIG_PARAMETER_COUNT; ++index) {
-    if (strcmp(name, PARAMETER_NAMES[index]) == 0) {
-      return index;
-    }
-  }
-  return -1;
-}
-
-void printConfig() {
-  Serial.print("$CONFIG");
-  for (uint8_t index = 0; index < CONFIG_PARAMETER_COUNT; ++index) {
-    Serial.print(';');
-    Serial.print(PARAMETER_NAMES[index]);
-    Serial.print('=');
-    Serial.print(config.values[index], 4);
-  }
-  Serial.println();
-}
-
-void setParameter(const char *name, const char *valueText) {
-  const int8_t index = parameterIndex(name);
-  if (index < 0 || !validNumber(valueText)) {
-    Serial.println("$ERROR;COMMAND=INVALID_PARAMETER");
-    return;
-  }
-  const float value = atof(valueText);
-  if (fabs(value) > 1000000.0f) {
-    Serial.println("$ERROR;COMMAND=OUT_OF_RANGE");
-    return;
-  }
-  config.values[index] = value;
-  EEPROM.put(0, config);
-  Serial.println("$ACK;COMMAND=SET");
-  printConfig();
-}
-
 void handleUsbCommand(char *command) {
-  if (strcmp(command, "GET") == 0) {
-    printConfig();
-    return;
-  }
-  if (strcmp(command, "CAL_SAVE") == 0) {
-    EEPROM.put(0, config);
-    Serial.println("$ACK;COMMAND=CAL_SAVE");
-    return;
-  }
   if (strncmp(command, "NEX ", 4) == 0) {
     const char *nextionCommand = command + 4;
     if (*nextionCommand == '\0') {
@@ -134,25 +34,6 @@ void handleUsbCommand(char *command) {
     Serial2.write(0xFF);
     Serial2.write(0xFF);
     return;
-  }
-  if (strncmp(command, "SET ", 4) == 0 || strncmp(command, "CAL ", 4) == 0) {
-    char *parameter = command + 4;
-    char *separator = strchr(parameter, ' ');
-    if (separator == NULL) {
-      Serial.println("$ERROR;COMMAND=INVALID_FORMAT");
-      return;
-    }
-    *separator = '\0';
-    setParameter(parameter, separator + 1);
-    return;
-  }
-  if (strncmp(command, "CAL_", 4) == 0) {
-    char *separator = strchr(command, '=');
-    if (separator != NULL) {
-      *separator = '\0';
-      setParameter(command + 4, separator + 1);
-      return;
-    }
   }
   if (strcmp(command, "STATUS_REQUEST") == 0) {
     Serial.println("$ACK;COMMAND=STATUS_REQUEST");
@@ -387,7 +268,6 @@ void setup() {
   Serial1.begin(9600);
   Serial2.begin(9600);
   Serial3.begin(9600);
-  loadConfig();
 }
 
 void loop() {

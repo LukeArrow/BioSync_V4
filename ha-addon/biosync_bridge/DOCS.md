@@ -51,20 +51,23 @@ HA-Konfiguration speichern, nicht in Git oder in öffentlich geteilten Logs.
 ## Home Assistant und MQTT Discovery
 
 Die MQTT-Integration muss mit demselben Broker verbunden sein und Discovery
-aktiviert haben. Die Bridge veröffentlicht Sensoren, Numbers für EEPROM-
-Parameter und Buttons unter dem HA-Discovery-Präfix `homeassistant/`.
+aktiviert haben. Die Bridge veröffentlicht rohe Messwerte, Node-Status und
+einen Button zur Statusabfrage unter dem HA-Discovery-Präfix `homeassistant/`.
 Das konfigurierte `mqtt_prefix` betrifft die BioSync-Daten-/Command-Topics.
 
 Das bestehende Paket
 [`homeassistant/packages/biosync.yaml`](../../homeassistant/packages/biosync.yaml)
-ergänzt Wartungsmodus, Recorder-Pause und Beispielalarme. Es ist nicht für den
-Bridge-Start erforderlich und wird nicht automatisch vom Add-on installiert.
-Einbindung siehe
+stellt Kalibrierhelfer, kalibrierte Sensoren, Wartungsmodus, Grenzwerte und
+Beispielalarme bereit. Es ist nicht für den Bridge-Start erforderlich und wird
+nicht automatisch vom Add-on installiert. Ohne das Paket stehen nur die
+Rohmesswerte zur Verfügung. Einbindung siehe
 [`homeassistant/README.md`](../../homeassistant/README.md).
 Bei Änderung von `mqtt_prefix` auch die festen `biosync_v4/...`-Topics im
 HA-Paket und eigenen Automationen anpassen.
 
-Die Standalone-Nutzung aus `ha-bridge/` bleibt weiterhin möglich.
+Die Kalibrierwerte werden in Home Assistant gespeichert und nicht im
+DisplayNode-EEPROM. Die Standalone-Nutzung aus `ha-bridge/` bleibt weiterhin
+möglich.
 
 SensorNode misst sofort beim Start und anschließend alle fünf Minuten. RelayNode
 sendet Änderungen sofort und zusätzlich alle fünf Minuten. Meldet sich ein Node

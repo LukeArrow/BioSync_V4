@@ -40,7 +40,7 @@ class BridgeReconnectTests(unittest.TestCase):
         with self.assertLogs("biosync_bridge", level="WARNING"):
             self.client.on_connect_fail(self.client, None)
 
-    def test_every_mqtt_connect_republishes_discovery_and_requests_config(self):
+    def test_every_mqtt_connect_republishes_discovery_and_clears_old_config(self):
         with (
             patch("biosync_bridge.main.publish_discovery") as discovery,
             patch.object(self.bridge, "send_command") as send,
@@ -48,11 +48,15 @@ class BridgeReconnectTests(unittest.TestCase):
             for _ in range(2):
                 self.client.on_connect(self.client, None, {}, 0, None)
             self.assertEqual(discovery.call_args_list, [call(self.client, ROOT)] * 2)
-            self.assertEqual(send.call_args_list, [call("GET")] * 2)
+            send.assert_not_called()
             self.assertEqual(self.client.subscribe.call_count, 2)
             self.assertEqual(
                 self.client.publish.call_args_list,
-                [call(f"{ROOT}/availability", "offline", retain=True)] * 2,
+                [
+                    call(f"{ROOT}/availability", "offline", retain=True),
+                    call(f"{ROOT}/config", "", retain=True),
+                ]
+                * 2,
             )
             with self.assertLogs("biosync_bridge", level="ERROR"):
                 self.client.on_connect(self.client, None, {}, 1, None)
@@ -73,7 +77,7 @@ class BridgeReconnectTests(unittest.TestCase):
         self.bridge.serial = MagicMock()
         self.bridge.serial.write.side_effect = OSError("USB getrennt")
         with self.assertLogs("biosync_bridge", level="WARNING"):
-            self.bridge.send_command("GET")
+            self.bridge.send_command("STATUS_REQUEST")
         self.assertFalse(self.bridge.available)
         self.assertEqual(
             self.client.publish.call_args_list[-1],
@@ -88,7 +92,6 @@ class BridgeReconnectTests(unittest.TestCase):
         self.client.publish.assert_called_once_with(
             f"{ROOT}/availability", "offline", retain=True
         )
-        self.bridge._handle_line("$CONFIG;DIST_OFFSET=2")
         with self.assertLogs("biosync_bridge", level="WARNING"):
             self.bridge._handle_line("$TELEMETRY;DIST=invalid")
         self.assertFalse(self.bridge.available)
@@ -121,10 +124,10 @@ class BridgeReconnectTests(unittest.TestCase):
         )
         self.assert_shutdown()
 
-    def test_initial_usb_failure_retries_then_processes_data(self):
+    def test_initial_usb_failure_retries_without_configuration_request(self):
         port = MagicMock()
         port.readline.side_effect = [
-            b"$CONFIG;DIST_OFFSET=2\n",
+            b"",
             KeyboardInterrupt(),
         ]
         with (
@@ -139,9 +142,8 @@ class BridgeReconnectTests(unittest.TestCase):
         self.assertEqual(open_port.call_count, 2)
         open_port.assert_called_with("/dev/test", 115200, timeout=0.2, write_timeout=1)
         sleep.assert_called_once_with(RECONNECT_MIN_DELAY)
-        port.write.assert_called_once_with(b"GET\n")
+        port.write.assert_not_called()
         port.close.assert_called_once()
-        self.assertEqual(self.bridge.parameters["DIST_OFFSET"], 2)
         self.assert_shutdown()
 
     def test_usb_read_loss_closes_and_reopens_port(self):
@@ -160,7 +162,7 @@ class BridgeReconnectTests(unittest.TestCase):
             self.bridge.run()
         sleep.assert_called_once_with(RECONNECT_MIN_DELAY)
         lost_port.close.assert_called_once()
-        restored_port.write.assert_called_once_with(b"GET\n")
+        restored_port.write.assert_not_called()
         restored_port.close.assert_called_once()
         self.assert_shutdown()
 
@@ -185,7 +187,7 @@ class BridgeReconnectTests(unittest.TestCase):
 
     def test_received_data_resets_usb_backoff(self):
         port = MagicMock()
-        port.readline.side_effect = [b"$CONFIG;DIST_OFFSET=2\n", OSError("USB")]
+        port.readline.side_effect = [b"", OSError("USB")]
         with (
             patch(
                 "biosync_bridge.main.serial.Serial",
@@ -218,7 +220,7 @@ class BridgeReconnectTests(unittest.TestCase):
             self.bridge.run()
         sleep.assert_called_once_with(RECONNECT_MIN_DELAY)
         lost_port.close.assert_called_once()
-        restored_port.write.assert_called_once_with(b"GET\n")
+        restored_port.write.assert_not_called()
         self.assert_shutdown()
 
     def test_usb_close_failure_does_not_prevent_shutdown(self):

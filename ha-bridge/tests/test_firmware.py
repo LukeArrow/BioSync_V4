@@ -129,12 +129,6 @@ class FirmwareLogicTests(unittest.TestCase):
                 "void requestTemperatures() { delay(750); }\n"
                 "float getTempCByIndex(int) { return 18.3f; }\n};\n"
             )
-            (work / "EEPROM.h").write_text(
-                "#pragma once\nstruct EEPROMClass {\n"
-                "template <typename T> void put(int, const T &) {}\n"
-                "template <typename T> void get(int, T &) {}\n"
-                "};\nEEPROMClass EEPROM;\n"
-            )
             source = work / "test.cpp"
             source.write_text(
                 '#include "Arduino.h"\n'
@@ -311,6 +305,23 @@ class FirmwareLogicTests(unittest.TestCase):
   assert(
       Serial.output.find(";SENSOR_NODE=ONLINE;RELAY_NODE=ONLINE") !=
       std::string::npos);
+""",
+        )
+
+    def test_display_has_no_eeprom_calibration_commands(self):
+        self.run_sketch(
+            FIRMWARE / "DisplayNode" / "DisplayNode.ino",
+            r"""
+  char get[] = "GET";
+  char set[] = "SET DIST_OFFSET 10";
+  char calibration[] = "CAL_SAVE";
+  handleUsbCommand(get);
+  handleUsbCommand(set);
+  handleUsbCommand(calibration);
+  assert(Serial.output.empty());
+  char status[] = "STATUS_REQUEST";
+  handleUsbCommand(status);
+  assert(Serial.output == "$ACK;COMMAND=STATUS_REQUEST\n");
 """,
         )
 

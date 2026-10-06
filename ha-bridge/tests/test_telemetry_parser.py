@@ -3,7 +3,6 @@ import unittest
 from biosync_bridge.telemetry_parser import (
     REQUIRED_FIELDS,
     TelemetryParseError,
-    parse_config_line,
     parse_relay_line,
     parse_telemetry_line,
 )
@@ -75,6 +74,16 @@ class TelemetryParserTests(unittest.TestCase):
                 "PUMP_ERROR=IDLE;VENT_ACTIVE=IDLE;VENT_ERROR=IDLE"
             )
 
+    def test_raw_sensor_values_outside_plausible_ranges_become_unknown(self):
+        result = parse_telemetry_line(
+            "$TELEMETRY;DIST=501;TMP=-21;TUR=1024;TDS=-1;"
+            "PUMP_ACTIVE=IDLE;PUMP_ERROR=IDLE;VENT_ACTIVE=IDLE;VENT_ERROR=IDLE"
+        )
+        self.assertEqual(
+            {key: result[key] for key in ("DIST", "TMP", "TUR", "TDS")},
+            {key: "UNKNOWN" for key in ("DIST", "TMP", "TUR", "TDS")},
+        )
+
     def test_relay_line_parses_all_four_fields_without_sensor_fields(self):
         self.assertEqual(
             parse_relay_line(
@@ -104,16 +113,6 @@ class TelemetryParserTests(unittest.TestCase):
                 "$TELEMETRY;PUMP_ACTIVE=ACTIVE;PUMP_ERROR=IDLE;"
                 "VENT_ACTIVE=IDLE;VENT_ERROR=IDLE"
             )
-
-    def test_config_readback(self):
-        self.assertEqual(
-            parse_config_line("$CONFIG;DIST_OFFSET=1.5;TDS_A=0"),
-            {
-                "DIST_OFFSET": 1.5,
-                "TDS_A": 0.0,
-            },
-        )
-
 
 if __name__ == "__main__":
     unittest.main()

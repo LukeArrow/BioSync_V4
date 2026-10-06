@@ -17,10 +17,11 @@ RelayNode  ─RS-485─┘               └─Serial2 9600─> Nextion
   ADC-Werte.
 - `firmware/RelayNode`: Nano Every, liest die vier LED-Lichtsensoren und
   übermittelt Zustände ereignisbasiert (mit 5-Minuten-Heartbeat).
-- `firmware/DisplayNode`: Mega 2560, RS-485-Gateway, USB-Protokoll, EEPROM und
-  generische Nextion-Durchleitung. Kein SD, keine lokale Umrechnung,
+- `firmware/DisplayNode`: Mega 2560, RS-485-Gateway, USB-Protokoll und
+  generische Nextion-Durchleitung. Kein EEPROM, kein SD, keine lokale Umrechnung,
   Wartungslogik oder Alarmentscheidung.
-- `ha-bridge`: Python-USB/MQTT-Bridge mit Discovery und Rohwertumrechnung.
+- `ha-bridge`: Python-USB/MQTT-Bridge mit Discovery und Plausibilitätsprüfung;
+  Kalibrierung und Umrechnung liegen im optionalen Home-Assistant-Paket.
 - `homeassistant/packages/biosync.yaml`: Beispiel für Wartungsmodus,
   Recorder-Pause und Grenzwertbenachrichtigungen.
 
@@ -83,8 +84,8 @@ Umgebungsvariablen angepasst werden.
 Bei einem zunächst unerreichbaren MQTT-Broker oder einem verlorenen USB-Gerät
 verbindet sich die Bridge automatisch erneut. Beide verwenden exponentiellen
 Backoff von 1 bis maximal 60 Sekunden; die Versuche werden protokolliert.
-Nach MQTT-Reconnect werden Discovery, Subscriptions und `GET` erneut ausgeführt,
-nach USB-Reconnect wird ebenfalls `GET` gesendet. Während USB getrennt ist,
+Nach MQTT-Reconnect werden Discovery und Subscriptions erneut eingerichtet.
+Während USB getrennt ist,
 werden Kommandos protokolliert und verworfen, nicht später nachgeholt.
 Bei USB-Verlust meldet MQTT die Bridge als `offline`, damit keine alten
 Messwerte als aktuell gelten. Erst neue gültige `$TELEMETRY` setzt sie wieder
@@ -184,54 +185,40 @@ Nextion-Tastendrücke gehen als Hex-Bytes auf USB:
 `$NEXTION;65 00 01 01`; die Bridge veröffentlicht sie auf
 `biosync_v4/nextion`.
 
-USB-Kommandos sind zeilenweise:
-
-- `GET` liest den aktuellen EEPROM-Zustand als `$CONFIG;NAME=WERT;...` zurück.
-- `SET PARAMETER WERT` speichert einen Parameter im EEPROM; `CAL PARAMETER WERT`
-  und `CAL_PARAMETER=WERT` sind kompatible Kurzformen.
-- `CAL_SAVE` speichert die aktuelle Konfiguration erneut im EEPROM und bestätigt
-  mit `$ACK;COMMAND=CAL_SAVE`. `SET`/`CAL` speichern bereits unmittelbar.
-- `NEX <Nextion-Befehl>` reicht den Befehl an Serial2 weiter und fügt die drei
-  Nextion-Endbytes `0xFF` an.
-- `STATUS_REQUEST` bestätigt die Verbindung. Es werden keine SD-Befehle
-  unterstützt.
-
-Home Assistant lädt beim Start mit `GET` die Werte aus dem EEPROM und stellt
-sie über MQTT-Discovery als `number`-Entities bereit. Änderungen werden mit
-`SET` direkt im EEPROM gespeichert; ein Firmware-Flash ist dafür nicht nötig.
-Über `biosync_v4/command/nextion` kann HA beliebige Nextion-Kommandos senden.
+USB-Kommandos sind zeilenweise. `NEX <Nextion-Befehl>` reicht einen Befehl an
+Serial2 weiter und fügt die drei Nextion-Endbytes `0xFF` an.
+`STATUS_REQUEST` bestätigt die Verbindung. EEPROM-Konfiguration und
+Kalibrierkommandos sind nicht Teil des Protokolls. Über
+`biosync_v4/command/nextion` kann HA beliebige Nextion-Kommandos senden.
 Die Firmware hält keine lokale Fallback-Anzeige aktuell: Bei HA-Ausfall bleibt
 das Nextion auf dem zuletzt empfangenen Inhalt stehen.
 
 ## Umrechnung und Kalibrierung
 
-Die SensorNode-ADC-Rohwerte werden erst in der Bridge interpretiert. Trübung
-wird stückweise linear aus den drei EEPROM-Stützpunkten `TUR_X1/Y1` bis
+Die Bridge publiziert rohe Sensormesswerte; sie verwirft lediglich nicht
+endliche Werte und markiert Werte außerhalb plausibler Rohbereiche als
+`UNKNOWN`: `DIST` 0–500 cm, `TMP` −20–60 °C sowie `TUR`/`TDS` 0–1023
+(Grenzen inklusive). Die Kalibrierung findet im optionalen Home-Assistant-Paket
+[`homeassistant/packages/biosync.yaml`](homeassistant/packages/biosync.yaml)
+statt. Es stellt anpassbare `input_number`-Helfer und daraus abgeleitete
+kalibrierte Sensoren bereit. Die Kalibrierwerte bleiben in Home Assistant
+erhalten und werden nicht im DisplayNode-EEPROM gespeichert.
+
+Trübung wird stückweise linear aus den drei Stützpunkten `TUR_X1/Y1` bis
 `TUR_X3/Y3` berechnet. TDS verwendet ein kubisches Polynom
-`((a*x+b)*x+c)*x+d` mit den EEPROM-Koeffizienten `TDS_A` bis `TDS_D` und
+`((a*x+b)*x+c)*x+d` mit den Koeffizienten `TDS_A` bis `TDS_D` und
 Temperaturkorrektur:
 
 ```text
 TDS_25 = TDS(T) / (1 + 0.02 * (Temperatur - 25))
 ```
 
-Die Startwerte sind Beispielwerte und keine Sensor-Kalibrierung. Die
-Referenzdokumentation nennt als lineares TDS-Beispiel `2.34 * ADC - 622`,
-veröffentlicht aber keine Koeffizienten des dort ebenfalls beschriebenen
-kubischen Fits. Daher wird dieses bekannte lineare Beispiel als kubisches
-Polynom mit den höheren Koeffizienten null initialisiert; die vier
-`TDS_A`–`TDS_D`-Werte können in HA auf einen kubischen Fit umgestellt werden.
-Trübungsstützpunkte und TDS-Polynom müssen anhand der realen Sensoren und
-Referenzmessungen eingestellt werden. Distanz und Temperatur folgen
-`(Rohwert + Offset) * Scale`; die Rohwert-Entitäten für TUR und TDS bleiben
-zusätzlich verfügbar.
-
-Vor jeder Umrechnung prüft die Bridge die **Rohwerte** auf Plausibilität:
-`DIST` 0–500 cm, `TMP` −20–60 °C sowie `TUR`/`TDS` 0–1023 (Grenzen inklusive).
-Ausreißer und nicht endliche Werte werden `UNKNOWN`, ebenso ihre abgeleiteten
-Werte. Ungültige Temperatur verhindert die TDS-Kompensation, lässt aber den
-gültigen TDS-Rohwert erhalten. Die benannten Grenzen in `conversions.py` sind
-Defaults; Offset/Scale ändern diese Rohwertprüfung nicht.
+Die eingestellten Startwerte sind nur Beispiele. Der TDS-Standard entspricht
+dem linearen Beispiel `2.34 * ADC - 622` (A und B sind null). Trübungs-
+Stützpunkte und TDS-Polynom sollten anhand realer Sensoren und Referenzlösungen
+kalibriert werden. Distanz und Temperatur folgen `(Rohwert + Offset) * Scale`.
+Der Rohwert bleibt zusätzlich als eigene Entity verfügbar. Die Kalibrierhelfer
+und Grenzwerte funktionieren nur, wenn das HA-Paket eingebunden ist.
 
 ## Tests und Home Assistant
 

@@ -1,11 +1,295 @@
 ---
+input_number:
+  biosync_v4_dist_offset:
+    name: BioSync Distanz Offset
+    min: -100
+    max: 100
+    step: 0.1
+    unit_of_measurement: cm
+  biosync_v4_dist_scale:
+    name: BioSync Distanz Skalierung
+    min: 0.1
+    max: 10
+    step: 0.01
+  biosync_v4_tmp_offset:
+    name: BioSync Temperatur Offset
+    min: -20
+    max: 20
+    step: 0.1
+    unit_of_measurement: "°C"
+  biosync_v4_tmp_scale:
+    name: BioSync Temperatur Skalierung
+    min: 0.1
+    max: 10
+    step: 0.01
+  biosync_v4_tur_x1:
+    name: BioSync Trübung ADC-Punkt 1
+    min: 0
+    max: 1023
+    step: 1
+    unit_of_measurement: ADC
+  biosync_v4_tur_y1:
+    name: BioSync Trübung NTU-Punkt 1
+    min: 0
+    max: 10000
+    step: 1
+    unit_of_measurement: NTU
+  biosync_v4_tur_x2:
+    name: BioSync Trübung ADC-Punkt 2
+    min: 0
+    max: 1023
+    step: 1
+    unit_of_measurement: ADC
+  biosync_v4_tur_y2:
+    name: BioSync Trübung NTU-Punkt 2
+    min: 0
+    max: 10000
+    step: 1
+    unit_of_measurement: NTU
+  biosync_v4_tur_x3:
+    name: BioSync Trübung ADC-Punkt 3
+    min: 0
+    max: 1023
+    step: 1
+    unit_of_measurement: ADC
+  biosync_v4_tur_y3:
+    name: BioSync Trübung NTU-Punkt 3
+    min: 0
+    max: 10000
+    step: 1
+    unit_of_measurement: NTU
+  biosync_v4_tds_a:
+    name: BioSync TDS Koeffizient A
+    min: -1
+    max: 1
+    step: 0.0001
+  biosync_v4_tds_b:
+    name: BioSync TDS Koeffizient B
+    min: -100
+    max: 100
+    step: 0.001
+  biosync_v4_tds_c:
+    name: BioSync TDS Koeffizient C
+    min: -10000
+    max: 10000
+    step: 0.01
+  biosync_v4_tds_d:
+    name: BioSync TDS Koeffizient D
+    min: -10000
+    max: 10000
+    step: 0.1
+    unit_of_measurement: ppm
+  biosync_v4_dist_threshold:
+    name: BioSync Distanz Grenzwert
+    min: 0
+    max: 1000
+    step: 1
+    unit_of_measurement: cm
+  biosync_v4_tur_threshold:
+    name: BioSync Trübung Grenzwert
+    min: 0
+    max: 10000
+    step: 1
+    unit_of_measurement: NTU
+  biosync_v4_tds_threshold:
+    name: BioSync TDS Grenzwert
+    min: 0
+    max: 10000
+    step: 1
+    unit_of_measurement: ppm
+
 input_boolean:
+  biosync_calibration_initialized:
+    name: BioSync Kalibrierung initialisiert
   biosync_maintenance:
     name: BioSync Wartungsmodus
     icon: mdi:wrench
     initial: false
 
+template:
+  - sensor:
+      - name: BioSync Füllstand Abstand
+        unique_id: biosync_v4_distance
+        default_entity_id: sensor.biosync_v4_distance
+        state: >-
+          {% set raw = states('sensor.biosync_v4_distance_raw') %}
+          {% set offset = states('input_number.biosync_v4_dist_offset') %}
+          {% set scale = states('input_number.biosync_v4_dist_scale') %}
+          {% if is_number(raw) and is_number(offset) and is_number(scale) %}
+            {{ ((raw | float + offset | float) * (scale | float)) | round(2) }}
+          {% else %}
+            {{ none }}
+          {% endif %}
+        unit_of_measurement: cm
+        device_class: distance
+        state_class: measurement
+      - name: BioSync Temperatur
+        unique_id: biosync_v4_temperature
+        default_entity_id: sensor.biosync_v4_temperature
+        state: >-
+          {% set raw = states('sensor.biosync_v4_temperature_raw') %}
+          {% set offset = states('input_number.biosync_v4_tmp_offset') %}
+          {% set scale = states('input_number.biosync_v4_tmp_scale') %}
+          {% if is_number(raw) and is_number(offset) and is_number(scale) %}
+            {{ ((raw | float + offset | float) * (scale | float)) | round(2) }}
+          {% else %}
+            {{ none }}
+          {% endif %}
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+      - name: BioSync Trübung
+        unique_id: biosync_v4_turbidity
+        default_entity_id: sensor.biosync_v4_turbidity
+        state: >-
+          {% set raw = states('sensor.biosync_v4_turbidity_raw') | float(none) %}
+          {% set x1 = states('input_number.biosync_v4_tur_x1') | float(none) %}
+          {% set y1 = states('input_number.biosync_v4_tur_y1') | float(none) %}
+          {% set x2 = states('input_number.biosync_v4_tur_x2') | float(none) %}
+          {% set y2 = states('input_number.biosync_v4_tur_y2') | float(none) %}
+          {% set x3 = states('input_number.biosync_v4_tur_x3') | float(none) %}
+          {% set y3 = states('input_number.biosync_v4_tur_y3') | float(none) %}
+          {% if raw is not none and x1 is not none and y1 is not none
+                and x2 is not none and y2 is not none
+                and x3 is not none and y3 is not none and x1 < x2 < x3 %}
+            {% if raw <= x2 %}
+              {{ (y1 + (raw - x1) * (y2 - y1) / (x2 - x1)) | round(2) }}
+            {% else %}
+              {{ (y2 + (raw - x2) * (y3 - y2) / (x3 - x2)) | round(2) }}
+            {% endif %}
+          {% else %}
+            {{ none }}
+          {% endif %}
+        unit_of_measurement: NTU
+        state_class: measurement
+      - name: BioSync TDS
+        unique_id: biosync_v4_tds
+        default_entity_id: sensor.biosync_v4_tds
+        state: >-
+          {% set raw = states('sensor.biosync_v4_tds_raw') %}
+          {% set temperature = states('sensor.biosync_v4_temperature') %}
+          {% set a = states('input_number.biosync_v4_tds_a') %}
+          {% set b = states('input_number.biosync_v4_tds_b') %}
+          {% set c = states('input_number.biosync_v4_tds_c') %}
+          {% set d = states('input_number.biosync_v4_tds_d') %}
+          {% if is_number(raw) and is_number(temperature) and is_number(a)
+                and is_number(b) and is_number(c) and is_number(d) %}
+            {% set factor = 1 + 0.02 * (temperature | float - 25) %}
+            {% if factor > 0 %}
+              {% set raw_value = raw | float %}
+              {% set polynomial = (((a | float * raw_value + b | float)
+                  * raw_value + c | float) * raw_value + d | float) %}
+              {{ (polynomial / factor) | round(2) }}
+            {% else %}
+              {{ none }}
+            {% endif %}
+          {% else %}
+            {{ none }}
+          {% endif %}
+        unit_of_measurement: ppm
+        state_class: measurement
+
 automation:
+  - id: biosync_initialize_calibration_helpers
+    alias: BioSync – Kalibrierhelfer initialisieren
+    mode: single
+    trigger:
+      - platform: homeassistant
+        event: start
+    condition:
+      - condition: state
+        entity_id: input_boolean.biosync_calibration_initialized
+        state: "off"
+    action:
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_dist_offset
+        data:
+          value: 0
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_dist_scale
+        data:
+          value: 1
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_tmp_offset
+        data:
+          value: 0
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_tmp_scale
+        data:
+          value: 1
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_tur_x1
+        data:
+          value: 0
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_tur_y1
+        data:
+          value: 0
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_tur_x2
+        data:
+          value: 512
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_tur_y2
+        data:
+          value: 500
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_tur_x3
+        data:
+          value: 1023
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_tur_y3
+        data:
+          value: 1000
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_tds_a
+        data:
+          value: 0
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_tds_b
+        data:
+          value: 0
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_tds_c
+        data:
+          value: 2.34
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_tds_d
+        data:
+          value: -622
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_dist_threshold
+        data:
+          value: 200
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_tur_threshold
+        data:
+          value: 1000
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_tds_threshold
+        data:
+          value: 1000
+      - service: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.biosync_calibration_initialized
+
   - id: biosync_recorder_pause_for_maintenance
     alias: BioSync – Recorder bei Wartung pausieren
     mode: restart
@@ -39,10 +323,10 @@ automation:
         value_template: >-
           {{ states('sensor.biosync_v4_tds') not in
              ['unknown', 'unavailable'] and
-             states('number.biosync_v4_tds_threshold') not in
+             states('input_number.biosync_v4_tds_threshold') not in
              ['unknown', 'unavailable'] and
              states('sensor.biosync_v4_tds') | float(0) >
-             states('number.biosync_v4_tds_threshold') | float(0) }}
+             states('input_number.biosync_v4_tds_threshold') | float(0) }}
     action:
       - service: persistent_notification.create
         data:
@@ -68,10 +352,10 @@ automation:
         value_template: >-
           {{ states('sensor.biosync_v4_turbidity') not in
              ['unknown', 'unavailable'] and
-             states('number.biosync_v4_tur_threshold') not in
+             states('input_number.biosync_v4_tur_threshold') not in
              ['unknown', 'unavailable'] and
              states('sensor.biosync_v4_turbidity') | float(0) >
-             states('number.biosync_v4_tur_threshold') | float(0) }}
+             states('input_number.biosync_v4_tur_threshold') | float(0) }}
     action:
       - service: persistent_notification.create
         data:
@@ -97,10 +381,10 @@ automation:
         value_template: >-
           {{ states('sensor.biosync_v4_distance') not in
              ['unknown', 'unavailable'] and
-             states('number.biosync_v4_dist_threshold') not in
+             states('input_number.biosync_v4_dist_threshold') not in
              ['unknown', 'unavailable'] and
              states('sensor.biosync_v4_distance') | float(0) >
-             states('number.biosync_v4_dist_threshold') | float(0) }}
+             states('input_number.biosync_v4_dist_threshold') | float(0) }}
     action:
       - service: persistent_notification.create
         data:

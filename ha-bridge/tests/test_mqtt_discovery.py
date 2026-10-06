@@ -52,12 +52,10 @@ class MqttDiscoveryTests(unittest.TestCase):
             for call in client.publish.call_args_list
         }
         for slug, key in (
-            ("distance", "DIST"),
-            ("temperature", "TMP"),
+            ("distance_raw", "DIST"),
+            ("temperature_raw", "TMP"),
             ("turbidity_raw", "TUR"),
             ("tds_raw", "TDS"),
-            ("turbidity", "TUR_NTU"),
-            ("tds", "TDS_PPM"),
         ):
             with self.subTest(sensor=slug):
                 config = configs[f"homeassistant/sensor/biosync_v4/{slug}/config"]
@@ -67,6 +65,24 @@ class MqttDiscoveryTests(unittest.TestCase):
                     + key
                     + " %}{{ v if v != 'UNKNOWN' else None }}",
                 )
+
+    def test_retained_configs_for_removed_entities_are_cleared(self):
+        client = MagicMock()
+        publish_discovery(client, "test_root")
+        cleared = {
+            call.args[0]
+            for call in client.publish.call_args_list
+            if call.args[1] == "" and call.kwargs.get("retain") is True
+        }
+        for slug in ("distance", "temperature", "turbidity", "tds"):
+            self.assertIn(
+                f"homeassistant/sensor/biosync_v4/{slug}/config", cleared
+            )
+        for name in ("dist_offset", "tur_x1", "tds_a", "tds_threshold"):
+            self.assertIn(f"homeassistant/number/biosync_v4/{name}/config", cleared)
+        self.assertIn(
+            "homeassistant/button/biosync_v4/read_config/config", cleared
+        )
 
 
 if __name__ == "__main__":
