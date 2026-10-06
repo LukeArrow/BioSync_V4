@@ -1,5 +1,24 @@
 ---
+# BioSync V4: Kalibrierung und Beispielalarme ausschließlich in Home Assistant.
+# Als /config/packages/biosync_v4.yaml kopieren und in configuration.yaml
+# unter homeassistant: packages: !include_dir_named packages einbinden.
+# MQTT liefert sensor.biosync_v4_*_raw; Firmware und Bridge bleiben unverändert.
+# V4 hat keine SD-, Firmware-Alarm- oder Letztes-Telegramm-Entity. Alte
+# biosync_displaynode_usb_bridge_* Referenzen passen daher nicht zu diesem Paket.
+# Die Sensoren unten sind aus Rohwerten abgeleitet, keine zusätzlichen Messungen.
+# Biologie-/Gesundheitsindizes aus alten Paketen wären lediglich Heuristiken,
+# keine gemessene biologische Aktivität; sie werden hier nicht nachgebildet.
+
+# Kalibrierwerte unter Einstellungen → Geräte & Dienste → Helfer anpassen.
+# Ohne "initial" stellt HA gespeicherte Werte nach Neustarts wieder her.
+# min/max begrenzen die Eingabe der Helfer, nicht die berechneten Sensorwerte.
 input_number:
+  # Distanz: (Rohwert in cm + Offset in cm) * Skalierung.
+  # Offset korrigiert den Nullpunkt VOR der Skalierung, Scale die Steigung.
+  # Bei Scale = 1: Offset = Referenzabstand - Rohwert.
+  # Für zwei Referenzen: Scale = (Ref2 - Ref1) / (Roh2 - Roh1),
+  # dann Offset = Ref1 / Scale - Roh1; unterschiedliche Rohwerte erforderlich.
+  # Die hier erlaubte Skalierung ist positiv (0,1 bis 10).
   biosync_v4_dist_offset:
     name: BioSync Distanz Offset
     min: -100
@@ -11,6 +30,8 @@ input_number:
     min: 0.1
     max: 10
     step: 0.01
+  # Temperatur: gleiche Offset-/Scale-Formel wie Distanz, hier in °C.
+  # Mit einem Referenzthermometer vergleichen; bei Scale = 1 nur Offset ändern.
   biosync_v4_tmp_offset:
     name: BioSync Temperatur Offset
     min: -20
@@ -22,6 +43,10 @@ input_number:
     min: 0.1
     max: 10
     step: 0.01
+  # Trübung: drei Paare aus gemessenem ADC-Wert x und Referenztrübung y in NTU.
+  # Mit Referenzlösungen bestimmen; nach ADC sortieren: x1 < x2 < x3.
+  # NTU darf dabei steigen oder fallen. Gleiche x-Werte sind nicht zulässig.
+  # Eingabebereiche: ADC 0–1023, Referenztrübung 0–10000 NTU.
   biosync_v4_tur_x1:
     name: BioSync Trübung ADC-Punkt 1
     min: 0
@@ -58,6 +83,10 @@ input_number:
     max: 10000
     step: 1
     unit_of_measurement: NTU
+  # TDS: a*x³ + b*x² + c*x + d, x ist der rohe ADC-Wert (keine Spannung).
+  # Koeffizienten mit passenden Referenzlösungen bestimmen; eine Messung allein
+  # reicht nicht aus, um vier Koeffizienten eindeutig festzulegen.
+  # Das Polynom beschreibt TDS bei Messtemperatur; unten wird auf 25 °C bezogen.
   biosync_v4_tds_a:
     name: BioSync TDS Koeffizient A
     min: -1
@@ -79,6 +108,10 @@ input_number:
     max: 10000
     step: 0.1
     unit_of_measurement: ppm
+  # Frei wählbare Betriebsschwellen für kalibrierte Werte, keine amtlichen
+  # Qualitätsgrenzen oder Sensor-Plausibilitätsgrenzen. Alarm nur bei Wert > Grenze.
+  # Distanz ist Sensorabstand zur Oberfläche, nicht Wasserhöhe oder Füllstand-%.
+  # Größerer Abstand bedeutet bei festem Sensor normalerweise weniger Wasser.
   biosync_v4_dist_threshold:
     name: BioSync Distanz Grenzwert
     min: 0
@@ -99,6 +132,8 @@ input_number:
     unit_of_measurement: ppm
 
 input_boolean:
+  # Merker für die einmalige Initialisierung; nicht zum Kalibrieren ausschalten.
+  # Ist er beim HA-Start aus, werden ALLE Kalibrier- und Grenzwerte zurückgesetzt.
   biosync_calibration_initialized:
     name: BioSync Kalibrierung initialisiert
   biosync_maintenance:
@@ -107,7 +142,12 @@ input_boolean:
     initial: false
 
 template:
+  # Fehlende/nichtnumerische Roh- oder Helferwerte ergeben keinen Zahlenwert
+  # (unknown), nicht künstlich 0. Ergebnisse werden auf zwei Stellen gerundet.
+  # Die Bridge prüft Rohbereiche: Distanz 0–500 cm, Temperatur -20–60 °C,
+  # Trübung/TDS 0–1023 ADC. Hier gibt es keine zusätzliche Ergebnisbegrenzung.
   - sensor:
+      # Kalibrierter Abstand; daraus wird hier kein Behälterfüllstand berechnet.
       - name: BioSync Füllstand Abstand
         unique_id: biosync_v4_distance
         default_entity_id: sensor.biosync_v4_distance
@@ -144,6 +184,11 @@ template:
         unit_of_measurement: "°C"
         device_class: temperature
         state_class: measurement
+      # Stückweise linear: y = yi + (x - xi) * (yj - yi) / (xj - xi).
+      # Bis einschließlich x2 gilt Paar 1/2, darüber Paar 2/3.
+      # Außerhalb x1–x3 wird extrapoliert, NICHT auf den Randwert begrenzt.
+      # Dadurch können auch negative NTU entstehen; nur im kalibrierten Bereich
+      # sinnvoll auswerten. Ungültige Punktreihenfolge ergibt unknown.
       - name: BioSync Trübung
         unique_id: biosync_v4_turbidity
         default_entity_id: sensor.biosync_v4_turbidity
@@ -168,6 +213,11 @@ template:
           {% endif %}
         unit_of_measurement: NTU
         state_class: measurement
+      # TDS_25 = (a*x³ + b*x² + c*x + d) / (1 + 0,02 * (T - 25)).
+      # T ist die oben kalibrierte Temperatur. 0,02 entspricht einer angenommenen
+      # Änderung von 2 % pro °C: eine Näherung, die nicht für jedes Wasser passt.
+      # Bei T = 25 °C ist der Faktor 1; bei Faktor <= 0 keine Berechnung.
+      # Keine Begrenzung auf 0 ppm: auch negative Polynomwerte bleiben sichtbar.
       - name: BioSync TDS
         unique_id: biosync_v4_tds
         default_entity_id: sensor.biosync_v4_tds
@@ -200,6 +250,12 @@ template:
         state_class: measurement
 
 automation:
+  # Nur beim HA-Start und ausgeschaltetem Initialisierungsmerker:
+  # Distanz/Temperatur unverändert (Offset 0, Scale 1);
+  # Trübung (0/0, 512/500, 1023/1000) und TDS 2,34*ADC - 622.
+  # Diese Startwerte sind BEISPIELE, keine geprüfte Sensorkalibrierung.
+  # Startgrenzen: Abstand 200 cm, Trübung 1000 NTU, TDS 1000 ppm.
+  # Erst danach Merker einschalten, damit weitere Starts Anpassungen erhalten.
   - id: biosync_initialize_calibration_helpers
     alias: BioSync – Kalibrierhelfer initialisieren
     mode: single
@@ -300,6 +356,10 @@ automation:
         target:
           entity_id: input_boolean.biosync_calibration_initialized
 
+  # Lokaler HA-Wartungshelfer, kein Firmware-Wartungsmodus.
+  # ACHTUNG: recorder.disable pausiert die History GLOBAL, nicht nur BioSync.
+  # Ausschalten aktiviert den Recorder wieder; MQTT-Messwerte laufen weiter.
+  # Wartung startet wegen initial: false nach jedem HA-Neustart ausgeschaltet.
   - id: biosync_recorder_pause_for_maintenance
     alias: BioSync – Recorder bei Wartung pausieren
     mode: restart
@@ -317,6 +377,11 @@ automation:
         default:
           - service: recorder.enable
 
+  # Beispielalarme: prüfen bei Sensorzustandsänderung oder Wartungswechsel.
+  # Eine reine Grenzwertänderung ist kein Trigger. Während Wartung sowie bei
+  # unknown/unavailable werden keine neuen Meldungen erzeugt.
+  # Persistente Meldungen mit fester ID werden aktualisiert, aber bei Rückkehr
+  # unter den Grenzwert NICHT automatisch gelöscht. Keine Aktorsteuerung.
   - id: biosync_tds_alarm
     alias: BioSync – TDS-Grenzwert
     mode: single
@@ -346,6 +411,7 @@ automation:
             TDS {{ states('sensor.biosync_v4_tds') }} ppm überschreitet den
             konfigurierten Grenzwert.
 
+  # Vergleicht kalibrierte NTU, nicht den ADC-Rohwert.
   - id: biosync_turbidity_alarm
     alias: BioSync – Trübungsgrenzwert
     mode: single
@@ -375,6 +441,7 @@ automation:
             Trübung {{ states('sensor.biosync_v4_turbidity') }} NTU
             überschreitet den konfigurierten Grenzwert.
 
+  # Vergleicht den kalibrierten Abstand in cm, nicht eine Füllstand-Prozentzahl.
   - id: biosync_distance_alarm
     alias: BioSync – Füllstand-Grenzwert
     mode: single

@@ -22,7 +22,7 @@ RelayNode  ─RS-485─┘               └─Serial2 9600─> Nextion
   Wartungslogik oder Alarmentscheidung.
 - `ha-bridge`: Python-USB/MQTT-Bridge mit Discovery und Plausibilitätsprüfung;
   Kalibrierung und Umrechnung liegen im optionalen Home-Assistant-Paket.
-- `homeassistant/packages/biosync.yaml`: Beispiel für Wartungsmodus,
+- `homeassistant/packages/biosync_v4.yaml`: Beispiel für Wartungsmodus,
   Recorder-Pause und Grenzwertbenachrichtigungen.
 
 ## Hardware und Flashen
@@ -199,7 +199,7 @@ Die Bridge publiziert rohe Sensormesswerte; sie verwirft lediglich nicht
 endliche Werte und markiert Werte außerhalb plausibler Rohbereiche als
 `UNKNOWN`: `DIST` 0–500 cm, `TMP` −20–60 °C sowie `TUR`/`TDS` 0–1023
 (Grenzen inklusive). Die Kalibrierung findet im optionalen Home-Assistant-Paket
-[`homeassistant/packages/biosync.yaml`](homeassistant/packages/biosync.yaml)
+[`homeassistant/packages/biosync_v4.yaml`](homeassistant/packages/biosync_v4.yaml)
 statt. Es stellt anpassbare `input_number`-Helfer und daraus abgeleitete
 kalibrierte Sensoren bereit. Die Kalibrierwerte bleiben in Home Assistant
 erhalten und werden nicht im DisplayNode-EEPROM gespeichert.
@@ -236,4 +236,4 @@ byte-identisch (Kopierbefehle im Add-on-README).
 
 Home-Assistant-Pakete sind unter `homeassistant/README.md` beschrieben.
 Wartung pausiert den Recorder global und unterdrückt die Beispielalarme.
-Schwellenwerte sind MQTT-Discovery-Entitäten und lassen sich ohne Flash ändern.
+Schwellenwerte sind `input_number`-Helfer im HA-Paket und lassen sich ohne Flash ändern.

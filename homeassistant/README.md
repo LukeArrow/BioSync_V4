@@ -1,8 +1,8 @@
 # Home Assistant
 
-`packages/biosync.yaml` stellt Kalibrierhelfer, kalibrierte Sensoren,
+`packages/biosync_v4.yaml` stellt Kalibrierhelfer, kalibrierte Sensoren,
 Grenzwerte, Wartungsmodus und Beispielalarme bereit. In `configuration.yaml`
-Packages aktivieren:
+Packages aktivieren und die Datei nach `/config/packages/biosync_v4.yaml` kopieren:
 
 ```yaml
 homeassistant:
@@ -21,6 +21,10 @@ berechnet daraus `sensor.biosync_v4_distance`, `sensor.biosync_v4_temperature`,
 Skalierung, drei Trübungsstützpunkten sowie den vier TDS-Polynomkoeffizienten.
 Kalibrierhelfer werden in Home Assistant gespeichert und überleben Neustarts;
 eine Kalibrierung im DisplayNode-EEPROM gibt es nicht.
+Die deutschen Kommentare im Paket erklären Formeln, Referenzmessungen,
+Eingabegrenzen und den Umgang mit fehlenden Werten. Trübung wird außerhalb
+der Stützpunkte extrapoliert; berechnete Werte werden nicht begrenzt.
+Die TDS-Temperaturkorrektur mit 2 % pro °C ist eine Näherung.
 Beim ersten Start initialisiert eine Automation die Helfer mit den im Paket
 dokumentierten Beispielwerten; danach bleiben manuelle Anpassungen erhalten.
 
@@ -38,6 +42,9 @@ Die Grenzwerte sind ebenfalls `input_number`-Helfer:
 keine Alarme ausgelöst. Die Beispielaktionen erzeugen persistente
 Benachrichtigungen; sie können in Home Assistant durch Push-, Sirenen- oder
 andere Aktionen ersetzt werden.
+Eine reine Grenzwertänderung löst keine Prüfung aus; Sensorzustandsänderungen
+und Wartungswechsel tun dies. Vorhandene Meldungen werden bei Unterschreitung
+nicht automatisch gelöscht.
 
 Der Wartungsmodus startet nach jedem Home-Assistant-Neustart ausgeschaltet;
 damit bleibt der Recorder nach einem Neustart aktiviert. Wartung muss danach
@@ -46,3 +53,7 @@ bei Bedarf erneut eingeschaltet werden.
 Der Mega sendet rohe Messwerte auch im Wartungsmodus unverändert weiter. Die
 Bridge prüft nur Plausibilitätsgrenzen; Home Assistant berechnet kalibrierte
 Messwerte und entscheidet über History, Alarme und Anzeigeinhalte.
+Alte `biosync_displaynode_usb_bridge_*`-Referenzen sind nicht V4-kompatibel.
+SD-, Firmware-Alarm- und Letztes-Telegramm-Entities stehen in V4 nicht bereit.
+Biologie- oder Gesundheitsindizes wären nur Heuristiken, keine direkten
+Messungen; dieses Paket legt solche Entities nicht an.
