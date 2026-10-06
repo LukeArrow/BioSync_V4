@@ -233,7 +233,7 @@ Statistikgrenzen und manuelle Migration sind ausführlich unter
 ## Tests und Home Assistant
 
 ```sh
-python -m pip install -r ha-bridge/requirements.txt ruff==0.16.10
+python -m pip install -r ha-bridge/requirements.txt -r homeassistant/requirements-test.txt ruff==0.16.10
 ruff check ha-bridge/
 ruff format --check ha-bridge/
 PYTHONPATH=ha-bridge python -m unittest discover -s ha-bridge/tests -v
@@ -246,4 +246,4 @@ byte-identisch (Kopierbefehle im Add-on-README).
 
 Home-Assistant-Pakete sind unter `homeassistant/README.md` beschrieben.
 Wartung pausiert den Recorder global und unterdrückt die Beispielalarme.
-Schwellenwerte sind MQTT-Discovery-Entitäten und lassen sich ohne Flash ändern.
+Schwellenwerte sind HA-lokale `input_number`-Helfer und lassen sich ohne Flash ändern.

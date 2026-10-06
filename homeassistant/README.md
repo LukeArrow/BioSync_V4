@@ -91,22 +91,36 @@ Das Berechnungspaket ergänzt folgende Entities:
 
 | Entity | Bedeutung |
 |---|---|
+| `sensor.biosync_v4_distance_cm` | Kalibrierter Abstand, anhand des Einheitenattributs auf cm normalisiert |
+| `sensor.biosync_v4_temperature_celsius` | Kalibrierte Temperatur, anhand des Einheitenattributs auf °C normalisiert |
 | `input_number.biosync_v4_empty_distance` | Kalibrierter Abstand bei leerem Behälter (cm) |
 | `input_number.biosync_v4_full_distance` | Kalibrierter Abstand bei vollem Behälter (cm) |
 | `input_boolean.biosync_v4_geometry_initialized` | Eigener, persistenter Erststart-Merker für die Geometrie |
-| `sensor.biosync_v4_level_cm` | Füllhöhe: `max(0, empty_distance - distance)` |
-| `sensor.biosync_v4_level_percent` | `100 * (empty_distance - distance) / (empty_distance - full_distance)`, auf 0–100 % begrenzt |
+| `sensor.biosync_v4_level_cm` | Füllhöhe: `max(0, empty_distance - distance_cm)` |
+| `sensor.biosync_v4_level_percent` | `100 * (empty_distance - distance_cm) / (empty_distance - full_distance)`, auf 0–100 % begrenzt |
 | `sensor.biosync_v4_level_mean_14d` | 14-Tage-Mittel der Füllhöhe in cm |
-| `sensor.biosync_v4_temperature_mean_14d` | 14-Tage-Mittel der kalibrierten Temperatur |
+| `sensor.biosync_v4_temperature_mean_14d` | 14-Tage-Mittel der auf °C normalisierten kalibrierten Temperatur |
 | `sensor.biosync_v4_turbidity_mean_14d` | 14-Tage-Mittel der kalibrierten Trübung |
 | `sensor.biosync_v4_tds_mean_14d` | 14-Tage-Mittel des kalibrierten TDS |
 | `sensor.biosync_v4_level_deviation_percent` | Vorzeichenbehaftete Abweichung der Füllhöhe vom Mittel |
 | `sensor.biosync_v4_tds_deviation_percent` | Vorzeichenbehaftete TDS-Abweichung vom Mittel |
 | `sensor.biosync_v4_turbidity_deviation_percent` | Vorzeichenbehaftete Trübungsabweichung vom Mittel |
-| `sensor.biosync_v4_temperature_difference` | Aktuelle Temperatur minus Mittel, vorzeichenbehaftet in °C |
+| `sensor.biosync_v4_temperature_difference` | `temperature_celsius` minus °C-Mittel, vorzeichenbehaftet in °C |
 | `sensor.biosync_v4_tds_ntu_ratio` | TDS / Trübung, Einheit ppm/NTU; kein Biologie-Score |
 
-`distance` ist `sensor.biosync_v4_distance`, nicht der Rohabstand. Die Geometrie
+`distance_cm` ist `sensor.biosync_v4_distance_cm`, nicht der Rohabstand.
+Die interne Normalisierung liest `sensor.biosync_v4_distance` mit dessen
+Einheitenattribut und unterstützt mm, cm, m, km, in, ft, yd und mi.
+`sensor.biosync_v4_temperature_celsius` normalisiert entsprechend
+`sensor.biosync_v4_temperature` aus °C, °F oder K auf °C.
+Damit verwenden Geometrie, Füllstandsberechnungen und `out_of_geometry`
+immer cm sowie Temperaturmittel und vorzeichenbehaftete Differenz immer °C,
+unabhängig vom HA-Einheitensystem. Die internen neutralen Einheitensensoren
+haben keine `device_class`, damit keine automatische Anzeige-/Einheitenumrechnung
+die abgeleiteten Werte verändert. Das bestehende Kalibrierpaket bleibt unverändert.
+Fehlende oder nicht unterstützte Einheiten ergeben `unavailable` und ein
+separates `configuration_problem`, nicht allein einen Kommunikationsfehler.
+Die Geometrie
 muss numerisch sein und `empty_distance > full_distance >= 0` erfüllen.
 Bei ungültiger Geometrie sind Füllstandswerte `unavailable`; außerhalb der
 Geometrie bleiben die Begrenzungen erhalten und eine separate Diagnose meldet
@@ -131,8 +145,8 @@ nicht durch künstliche Nullen oder einen vermeintlich gesunden Zustand ersetzt.
 
 Alle vier Statistik-Sensoren verwenden `state_characteristic: average_step`,
 `sampling_size: 2000000` und `max_age: {days: 14}`. Quellen sind
-`sensor.biosync_v4_level_cm` sowie die drei kalibrierten Sensoren
-`sensor.biosync_v4_temperature`, `sensor.biosync_v4_turbidity` und
+`sensor.biosync_v4_level_cm` sowie die drei kalibrierten Quellen
+`sensor.biosync_v4_temperature_celsius`, `sensor.biosync_v4_turbidity` und
 `sensor.biosync_v4_tds`. `average_step` ist ein zeitgewichtetes Stufenmittel
 über die verfügbaren numerischen Zustandsänderungen, kein schlichtes
 arithmetisches Mittel und keine Garantie für lückenlose 14 Tage.
@@ -169,8 +183,8 @@ Offizielle Dokumentation:
 | `binary_sensor.biosync_v4_pump_fault` | Pumpenfehler: `ERROR` → an, `IDLE` → aus; `UNKNOWN`/fehlend → `unavailable` |
 | `binary_sensor.biosync_v4_vent_fault` | Belüfterfehler: `ERROR` → an, `IDLE` → aus; `UNKNOWN`/fehlend → `unavailable` |
 | `binary_sensor.biosync_v4_raw_invalid` | Numerische Rohwerte außerhalb der Hardwaregrenzen |
-| `binary_sensor.biosync_v4_configuration_problem` | Fehlende kalibrierte Werte, negative kalibrierte Distanz/Trübung/TDS oder ungültige Geometrie |
-| `binary_sensor.biosync_v4_out_of_geometry` | Kalibrierter Abstand kleiner als Vollabstand oder größer als Leerabstand, trotz begrenzter Füllstandsanzeige |
+| `binary_sensor.biosync_v4_configuration_problem` | Fehlende kalibrierte/normalisierte Werte oder nicht unterstützte Einheiten, negative Distanz/Trübung/TDS oder ungültige Geometrie |
+| `binary_sensor.biosync_v4_out_of_geometry` | Normalisierter kalibrierter Abstand `distance_cm` kleiner als Vollabstand oder größer als Leerabstand, trotz begrenzter Füllstandsanzeige |
 | `binary_sensor.biosync_v4_alarm` | Technischer Sammelalarm, sobald eine technische Teildiagnose nicht `off` ist, einschließlich `unknown`/`unavailable` |
 | `sensor.biosync_v4_process_messages` | Interne Listenquelle für Prozess-/Datenwarnungen; kurzer fester Zustand und Attribute |
 | `sensor.biosync_v4_diagnostic_messages` | Interne Listenquelle für alle Diagnoseursachen; kurzer fester Zustand und Attribute |
@@ -277,7 +291,8 @@ Altformeln ist keine exakte Score-Reproduktion möglich. Es wird daher auch
 | Funktion | V4-Schnittstelle / Grenzen |
 |---|---|
 | Rohmesswerte | MQTT-`sensor`: Abstand in cm, Temperatur in °C, Trübung und TDS in ADC (0–1023), noch nicht NTU/ppm |
-| Kalibrierte Messwerte | HA-Template-`sensor`: Abstand in cm, Temperatur in °C, Trübung in NTU, TDS in ppm |
+| Kalibrierte Messwerte | HA-Template-`sensor`: nominal Abstand in cm und Temperatur in °C (HA kann Einheiten umrechnen), Trübung in NTU, TDS in ppm |
+| Interne normalisierte Messwerte | `sensor.biosync_v4_distance_cm` und `sensor.biosync_v4_temperature_celsius`: fest cm bzw. °C ohne `device_class`; Quellen für die abgeleiteten Berechnungen |
 | Pumpen-/Belüfter-Aktiv- und Fehlerkanäle | MQTT-`sensor`, **Textzustände** `ACTIVE`/`IDLE` bzw. `ERROR`/`IDLE`; fehlend `UNKNOWN` oder HA-`unknown`/`unavailable`, keine `on`/`off`-Binary-Sensoren |
 | Node-Verbindung | MQTT-`binary_sensor.biosync_v4_sensor_node` / `binary_sensor.biosync_v4_relay_node`, HA-Zustände `on`/`off` |
 | Wartung | HA-lokales `input_boolean.biosync_maintenance`; kein Firmware-Wartungsstatus |

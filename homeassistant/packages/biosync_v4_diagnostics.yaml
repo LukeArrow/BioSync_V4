@@ -72,19 +72,26 @@ template:
               {% set ns.problem = true %}
             {% endif %}
           {% endfor %}
+          {% for reading in ['distance_cm', 'temperature_celsius'] %}
+            {% set source = 'distance' if reading == 'distance_cm' else 'temperature' %}
+            {% if is_number(states('sensor.biosync_v4_' ~ source))
+                  and not is_number(states('sensor.biosync_v4_' ~ reading)) %}
+              {% set ns.problem = true %}
+            {% endif %}
+          {% endfor %}
           {{ ns.problem }}
       - name: BioSync Abstand außerhalb Geometrie
         unique_id: biosync_v4_out_of_geometry
         default_entity_id: binary_sensor.biosync_v4_out_of_geometry
         device_class: problem
         availability: >-
-          {% set d = states('sensor.biosync_v4_distance') %}
+          {% set d = states('sensor.biosync_v4_distance_cm') %}
           {% set e = states('input_number.biosync_v4_empty_distance') %}
           {% set f = states('input_number.biosync_v4_full_distance') %}
           {{ is_number(d) and is_number(e) and is_number(f)
              and e | float(0) > f | float(0) >= 0 }}
         state: >-
-          {% set d = states('sensor.biosync_v4_distance') %}
+          {% set d = states('sensor.biosync_v4_distance_cm') %}
           {% set e = states('input_number.biosync_v4_empty_distance') %}
           {% set f = states('input_number.biosync_v4_full_distance') %}
           {% if is_number(d) and is_number(e) and is_number(f)

@@ -65,7 +65,7 @@ sensor:
   - platform: statistics
     name: biosync_v4_temperature_mean_14d
     unique_id: biosync_v4_temperature_mean_14d
-    entity_id: sensor.biosync_v4_temperature
+    entity_id: sensor.biosync_v4_temperature_celsius
     state_characteristic: average_step
     max_age:
       days: 14
@@ -89,19 +89,53 @@ sensor:
 
 template:
   - sensor:
+      - name: BioSync Abstand in Zentimetern
+        unique_id: biosync_v4_distance_cm
+        default_entity_id: sensor.biosync_v4_distance_cm
+        unit_of_measurement: cm
+        state_class: measurement
+        availability: >-
+          {{ is_number(states('sensor.biosync_v4_distance'))
+             and state_attr('sensor.biosync_v4_distance', 'unit_of_measurement')
+                 in ['mm', 'cm', 'm', 'km', 'in', 'ft', 'yd', 'mi'] }}
+        state: >-
+          {% set v = states('sensor.biosync_v4_distance') %}
+          {% set unit = state_attr('sensor.biosync_v4_distance', 'unit_of_measurement') %}
+          {% set factors = {'mm': 0.1, 'cm': 1, 'm': 100, 'km': 100000,
+                            'in': 2.54, 'ft': 30.48, 'yd': 91.44, 'mi': 160934.4} %}
+          {% if is_number(v) and unit in factors %}
+            {{ v | float * factors[unit] }}
+          {% else %}{{ none }}{% endif %}
+      - name: BioSync Temperatur in Celsius
+        unique_id: biosync_v4_temperature_celsius
+        default_entity_id: sensor.biosync_v4_temperature_celsius
+        unit_of_measurement: "°C"
+        state_class: measurement
+        availability: >-
+          {{ is_number(states('sensor.biosync_v4_temperature'))
+             and state_attr('sensor.biosync_v4_temperature', 'unit_of_measurement')
+                 in ['°C', '°F', 'K'] }}
+        state: >-
+          {% set v = states('sensor.biosync_v4_temperature') %}
+          {% set unit = state_attr('sensor.biosync_v4_temperature', 'unit_of_measurement') %}
+          {% if is_number(v) and unit in ['°C', '°F', 'K'] %}
+            {% if unit == '°F' %}{{ (v | float - 32) * 5 / 9 }}
+            {% elif unit == 'K' %}{{ v | float - 273.15 }}
+            {% else %}{{ v | float }}{% endif %}
+          {% else %}{{ none }}{% endif %}
       - name: BioSync Füllstand Höhe
         unique_id: biosync_v4_level_cm
         default_entity_id: sensor.biosync_v4_level_cm
         unit_of_measurement: cm
         state_class: measurement
         availability: >-
-          {% set d = states('sensor.biosync_v4_distance') %}
+          {% set d = states('sensor.biosync_v4_distance_cm') %}
           {% set e = states('input_number.biosync_v4_empty_distance') %}
           {% set f = states('input_number.biosync_v4_full_distance') %}
           {{ is_number(d) and is_number(e) and is_number(f)
              and e | float(0) > f | float(0) >= 0 }}
         state: >-
-          {% set d = states('sensor.biosync_v4_distance') %}
+          {% set d = states('sensor.biosync_v4_distance_cm') %}
           {% set e = states('input_number.biosync_v4_empty_distance') %}
           {% set f = states('input_number.biosync_v4_full_distance') %}
           {% if is_number(d) and is_number(e) and is_number(f)
@@ -114,13 +148,13 @@ template:
         unit_of_measurement: "%"
         state_class: measurement
         availability: >-
-          {% set d = states('sensor.biosync_v4_distance') %}
+          {% set d = states('sensor.biosync_v4_distance_cm') %}
           {% set e = states('input_number.biosync_v4_empty_distance') %}
           {% set f = states('input_number.biosync_v4_full_distance') %}
           {{ is_number(d) and is_number(e) and is_number(f)
              and e | float(0) > f | float(0) >= 0 }}
         state: >-
-          {% set d = states('sensor.biosync_v4_distance') %}
+          {% set d = states('sensor.biosync_v4_distance_cm') %}
           {% set e = states('input_number.biosync_v4_empty_distance') %}
           {% set f = states('input_number.biosync_v4_full_distance') %}
           {% if is_number(d) and is_number(e) and is_number(f)
@@ -179,10 +213,10 @@ template:
         unit_of_measurement: "°C"
         state_class: measurement
         availability: >-
-          {{ is_number(states('sensor.biosync_v4_temperature'))
+          {{ is_number(states('sensor.biosync_v4_temperature_celsius'))
              and is_number(states('sensor.biosync_v4_temperature_mean_14d')) }}
         state: >-
-          {% set v = states('sensor.biosync_v4_temperature') %}
+          {% set v = states('sensor.biosync_v4_temperature_celsius') %}
           {% set m = states('sensor.biosync_v4_temperature_mean_14d') %}
           {% if is_number(v) and is_number(m) %}
             {{ (v | float - m | float) | round(2) }}

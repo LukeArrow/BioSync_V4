@@ -90,12 +90,16 @@ class PackageTemplates:
 
     def evaluate_diagnostics(self):
         # Independent source lists precede their counts; no self-reference.
+        self.evaluate("sensor.biosync_v4_distance_cm")
+        self.evaluate("sensor.biosync_v4_temperature_celsius")
         for block in self.packages["biosync_v4_diagnostics"]["template"]:
             for domain in ("binary_sensor", "sensor"):
                 for entry in block.get(domain, []):
                     self.evaluate(entry["default_entity_id"])
 
     def healthy_inputs(self):
+        self.attributes["sensor.biosync_v4_distance"] = {"unit_of_measurement": "cm"}
+        self.attributes["sensor.biosync_v4_temperature"] = {"unit_of_measurement": "°C"}
         self.states.update(
             {
                 "input_number.biosync_v4_empty_distance": "170",
@@ -124,6 +128,8 @@ class PackageTemplates:
         for relay in ("pump", "vent"):
             self.states[f"sensor.biosync_v4_{relay}_active"] = "IDLE"
             self.states[f"sensor.biosync_v4_{relay}_error"] = "IDLE"
+        self.evaluate("sensor.biosync_v4_distance_cm")
+        self.evaluate("sensor.biosync_v4_temperature_celsius")
 
 
 class HomeAssistantPackageTests(unittest.TestCase):
@@ -132,6 +138,8 @@ class HomeAssistantPackageTests(unittest.TestCase):
         self.ha.healthy_inputs()
 
     def state(self, slug):
+        self.ha.evaluate("sensor.biosync_v4_distance_cm")
+        self.ha.evaluate("sensor.biosync_v4_temperature_celsius")
         return self.ha.evaluate(f"sensor.biosync_v4_{slug}")
 
     def diagnostic(self, slug):
@@ -187,7 +195,7 @@ class HomeAssistantPackageTests(unittest.TestCase):
             {sensor["entity_id"] for sensor in stats},
             {
                 "sensor.biosync_v4_level_cm",
-                "sensor.biosync_v4_temperature",
+                "sensor.biosync_v4_temperature_celsius",
                 "sensor.biosync_v4_turbidity",
                 "sensor.biosync_v4_tds",
             },
@@ -239,6 +247,8 @@ class HomeAssistantPackageTests(unittest.TestCase):
 
     def test_invalid_numeric_inputs_never_become_zero(self):
         pairs = {
+            "distance_cm": ["sensor.biosync_v4_distance"],
+            "temperature_celsius": ["sensor.biosync_v4_temperature"],
             "level_cm": ["sensor.biosync_v4_distance"],
             "level_percent": ["sensor.biosync_v4_distance"],
             "level_deviation_percent": [
@@ -289,6 +299,57 @@ class HomeAssistantPackageTests(unittest.TestCase):
             self.ha.states["sensor.biosync_v4_temperature"] = str(current)
             self.ha.states["sensor.biosync_v4_temperature_mean_14d"] = str(mean)
             self.assertEqual(float(self.state("temperature_difference")), expected)
+
+    def test_distance_and_temperature_display_units_are_normalized(self):
+        for unit, value in (
+            ("mm", 900),
+            ("cm", 90),
+            ("m", 0.9),
+            ("km", 0.0009),
+            ("in", 90 / 2.54),
+            ("ft", 90 / 30.48),
+            ("yd", 90 / 91.44),
+            ("mi", 90 / 160934.4),
+        ):
+            self.ha.states["sensor.biosync_v4_distance"] = str(value)
+            self.ha.attributes["sensor.biosync_v4_distance"]["unit_of_measurement"] = (
+                unit
+            )
+            self.assertAlmostEqual(float(self.state("distance_cm")), 90)
+            self.assertEqual(float(self.state("level_cm")), 80)
+            self.assertEqual(float(self.state("level_percent")), 50)
+            self.ha.evaluate_diagnostics()
+            self.assertEqual(
+                self.ha.states["binary_sensor.biosync_v4_out_of_geometry"], "off"
+            )
+        for unit, value in (("°C", 25), ("°F", 77), ("K", 298.15)):
+            self.ha.states["sensor.biosync_v4_temperature"] = str(value)
+            self.ha.attributes["sensor.biosync_v4_temperature"][
+                "unit_of_measurement"
+            ] = unit
+            self.ha.states["sensor.biosync_v4_temperature_mean_14d"] = "20"
+            self.assertEqual(float(self.state("temperature_difference")), 5)
+            self.ha.evaluate_diagnostics()
+            self.assertEqual(self.diagnostic("process_warnings"), "0")
+        for entity, normalized in (
+            ("distance", "distance_cm"),
+            ("temperature", "temperature_celsius"),
+        ):
+            for unit in (None, "unknown", "unsupported"):
+                self.ha.healthy_inputs()
+                self.ha.attributes[f"sensor.biosync_v4_{entity}"][
+                    "unit_of_measurement"
+                ] = unit
+                self.assertEqual(self.state(normalized), "unavailable")
+                self.ha.evaluate_diagnostics()
+                self.assertEqual(
+                    self.ha.states["binary_sensor.biosync_v4_configuration_problem"],
+                    "on",
+                )
+                self.assertEqual(
+                    self.ha.states["binary_sensor.biosync_v4_communication_problem"],
+                    "off",
+                )
 
     def test_relays_unknown_and_disconnected_nodes(self):
         for relay in ("pump", "vent"):
