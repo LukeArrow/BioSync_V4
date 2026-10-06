@@ -1,0 +1,227 @@
+---
+template:
+  - binary_sensor:
+      - name: BioSync Kommunikationsproblem
+        unique_id: biosync_v4_communication_problem
+        default_entity_id: binary_sensor.biosync_v4_communication_problem
+        device_class: problem
+        state: >-
+          {% set ns = namespace(problem=false) %}
+          {% for node in ['sensor_node', 'relay_node'] %}
+            {% if states('binary_sensor.biosync_v4_' ~ node) != 'on' %}
+              {% set ns.problem = true %}
+            {% endif %}
+          {% endfor %}
+          {% for reading in ['distance', 'temperature', 'turbidity', 'tds'] %}
+            {% if not is_number(states('sensor.biosync_v4_' ~ reading ~ '_raw')) %}
+              {% set ns.problem = true %}
+            {% endif %}
+          {% endfor %}
+          {% for relay in ['pump', 'vent'] %}
+            {% if states('sensor.biosync_v4_' ~ relay ~ '_error') not in ['ERROR', 'IDLE']
+                  or states('sensor.biosync_v4_' ~ relay ~ '_active') not in ['ACTIVE', 'IDLE'] %}
+              {% set ns.problem = true %}
+            {% endif %}
+          {% endfor %}
+          {{ ns.problem }}
+      - name: BioSync Pumpenfehler
+        unique_id: biosync_v4_pump_fault
+        default_entity_id: binary_sensor.biosync_v4_pump_fault
+        device_class: problem
+        availability: "{{ states('sensor.biosync_v4_pump_error') in ['ERROR', 'IDLE'] }}"
+        state: "{{ states('sensor.biosync_v4_pump_error') == 'ERROR' }}"
+      - name: BioSync Lüftungsfehler
+        unique_id: biosync_v4_vent_fault
+        default_entity_id: binary_sensor.biosync_v4_vent_fault
+        device_class: problem
+        availability: "{{ states('sensor.biosync_v4_vent_error') in ['ERROR', 'IDLE'] }}"
+        state: "{{ states('sensor.biosync_v4_vent_error') == 'ERROR' }}"
+      - name: BioSync Rohwert unplausibel
+        unique_id: biosync_v4_raw_invalid
+        default_entity_id: binary_sensor.biosync_v4_raw_invalid
+        device_class: problem
+        availability: >-
+          {{ is_number(states('sensor.biosync_v4_distance_raw'))
+             and is_number(states('sensor.biosync_v4_temperature_raw'))
+             and is_number(states('sensor.biosync_v4_turbidity_raw'))
+             and is_number(states('sensor.biosync_v4_tds_raw')) }}
+        state: >-
+          {% set ns = namespace(invalid=false) %}
+          {% for reading, low, high in [('distance', 0, 500), ('temperature', -20, 60),
+                                        ('turbidity', 0, 1023), ('tds', 0, 1023)] %}
+            {% set v = states('sensor.biosync_v4_' ~ reading ~ '_raw') %}
+            {% if is_number(v) and not low <= v | float(0) <= high %}
+              {% set ns.invalid = true %}
+            {% endif %}
+          {% endfor %}
+          {{ ns.invalid }}
+      - name: BioSync Kalibrierung oder Geometrie prüfen
+        unique_id: biosync_v4_configuration_problem
+        default_entity_id: binary_sensor.biosync_v4_configuration_problem
+        device_class: problem
+        state: >-
+          {% set e = states('input_number.biosync_v4_empty_distance') %}
+          {% set f = states('input_number.biosync_v4_full_distance') %}
+          {% set ns = namespace(problem=not (is_number(e) and is_number(f)
+                                   and e | float(0) > f | float(0) >= 0)) %}
+          {% for reading in ['distance', 'temperature', 'turbidity', 'tds'] %}
+            {% set raw = states('sensor.biosync_v4_' ~ reading ~ '_raw') %}
+            {% set calibrated = states('sensor.biosync_v4_' ~ reading) %}
+            {% if is_number(raw) and (not is_number(calibrated)
+                  or (reading != 'temperature' and calibrated | float(0) < 0)) %}
+              {% set ns.problem = true %}
+            {% endif %}
+          {% endfor %}
+          {{ ns.problem }}
+      - name: BioSync Abstand außerhalb Geometrie
+        unique_id: biosync_v4_out_of_geometry
+        default_entity_id: binary_sensor.biosync_v4_out_of_geometry
+        device_class: problem
+        availability: >-
+          {% set d = states('sensor.biosync_v4_distance') %}
+          {% set e = states('input_number.biosync_v4_empty_distance') %}
+          {% set f = states('input_number.biosync_v4_full_distance') %}
+          {{ is_number(d) and is_number(e) and is_number(f)
+             and e | float(0) > f | float(0) >= 0 }}
+        state: >-
+          {% set d = states('sensor.biosync_v4_distance') %}
+          {% set e = states('input_number.biosync_v4_empty_distance') %}
+          {% set f = states('input_number.biosync_v4_full_distance') %}
+          {% if is_number(d) and is_number(e) and is_number(f)
+                and e | float(0) > f | float(0) >= 0 %}
+            {{ d | float < f | float or d | float > e | float }}
+          {% else %}{{ none }}{% endif %}
+      - name: BioSync Abgeleiteter Alarm
+        unique_id: biosync_v4_alarm
+        default_entity_id: binary_sensor.biosync_v4_alarm
+        device_class: problem
+        state: >-
+          {% set ns = namespace(alarm=false) %}
+          {% for cause in ['communication_problem', 'pump_fault', 'vent_fault',
+                           'raw_invalid', 'configuration_problem', 'out_of_geometry'] %}
+            {% if states('binary_sensor.biosync_v4_' ~ cause) != 'off' %}
+              {% set ns.alarm = true %}
+            {% endif %}
+          {% endfor %}
+          {{ ns.alarm }}
+    sensor:
+      - name: BioSync Prozessmeldungen
+        unique_id: biosync_v4_process_messages
+        default_entity_id: sensor.biosync_v4_process_messages
+        state: "Prozesshinweise"
+        attributes:
+          meldungen: >-
+            {% set ns = namespace(messages=[]) %}
+            {% for entity, limit, label in [
+                 ('turbidity_deviation_percent', 25, 'Trübungsabweichung über 25 %'),
+                 ('tds_deviation_percent', 25, 'TDS-Abweichung über 25 %'),
+                 ('temperature_difference', 8, 'Temperaturdifferenz über 8 °C')] %}
+              {% set v = states('sensor.biosync_v4_' ~ entity) %}
+              {% if is_number(v) and v | float(0) | abs > limit %}
+                {% set ns.messages = ns.messages + [label] %}
+              {% endif %}
+            {% endfor %}
+            {% set level = states('sensor.biosync_v4_level_percent') %}
+            {% if is_number(level) %}
+              {% if level | float(0) < 15 %}
+                {% set ns.messages = ns.messages + ['Füllstand unter 15 %'] %}
+              {% elif level | float(0) > 95 %}
+                {% set ns.messages = ns.messages + ['Füllstand über 95 %'] %}
+              {% endif %}
+            {% endif %}
+            {{ ns.messages }}
+          daten_fehlend: >-
+            {% set ns = namespace(missing=[]) %}
+            {% for entity in ['turbidity_deviation_percent', 'tds_deviation_percent',
+                               'temperature_difference', 'level_percent', 'level_deviation_percent'] %}
+              {% if not is_number(states('sensor.biosync_v4_' ~ entity)) %}
+                {% set ns.missing = ns.missing + ['sensor.biosync_v4_' ~ entity] %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.missing }}
+      - name: BioSync Prozesswarnungen
+        unique_id: biosync_v4_process_warnings
+        default_entity_id: sensor.biosync_v4_process_warnings
+        state: >-
+          {% set messages = state_attr('sensor.biosync_v4_process_messages', 'meldungen') %}
+          {{ messages | count if messages is not none else none }}
+        attributes:
+          meldungen: "{{ state_attr('sensor.biosync_v4_process_messages', 'meldungen') }}"
+          daten_fehlend: "{{ state_attr('sensor.biosync_v4_process_messages', 'daten_fehlend') }}"
+      - name: BioSync Diagnosemeldungen
+        unique_id: biosync_v4_diagnostic_messages
+        default_entity_id: sensor.biosync_v4_diagnostic_messages
+        state: "Diagnosehinweise"
+        attributes:
+          meldungen: >-
+            {% set ns = namespace(messages=[]) %}
+            {% for entity, label in [
+                 ('communication_problem', 'Kommunikation oder erforderliche Roh-/Relaisdaten fehlen'),
+                 ('pump_fault', 'Pumpenfehler erkannt'),
+                 ('vent_fault', 'Lüftungsfehler erkannt'),
+                 ('raw_invalid', 'Rohwert außerhalb Hardwarebereich'),
+                 ('configuration_problem', 'Kalibrierung oder Geometrie ungültig'),
+                 ('out_of_geometry', 'Abstand außerhalb der Einbaugeometrie')] %}
+              {% set v = states('binary_sensor.biosync_v4_' ~ entity) %}
+              {% if v == 'on' %}
+                {% set ns.messages = ns.messages + [label] %}
+              {% elif v != 'off' %}
+                {% set ns.messages = ns.messages + [label ~ ': Status unbekannt'] %}
+              {% endif %}
+            {% endfor %}
+            {% set warnings = state_attr('sensor.biosync_v4_process_warnings', 'meldungen') %}
+            {% if warnings is not none %}
+              {% set ns.messages = ns.messages + warnings %}
+            {% endif %}
+            {% set missing = state_attr('sensor.biosync_v4_process_warnings', 'daten_fehlend') %}
+            {% if missing is none or missing | count > 0 %}
+              {% set ns.messages = ns.messages + ['Daten oder Vergleichsbasis fehlen'] %}
+            {% endif %}
+            {% set maintenance = states('input_boolean.biosync_maintenance') %}
+            {% if maintenance == 'on' %}
+              {% set ns.messages = ns.messages + ['Wartungsmodus aktiv (Recorder global pausiert)'] %}
+            {% elif maintenance != 'off' %}
+              {% set ns.messages = ns.messages + ['Wartungsstatus unbekannt'] %}
+            {% endif %}
+            {{ ns.messages }}
+      - name: BioSync Diagnoseursachen
+        unique_id: biosync_v4_diagnostic_causes
+        default_entity_id: sensor.biosync_v4_diagnostic_causes
+        state: >-
+          {% set messages = state_attr('sensor.biosync_v4_diagnostic_messages', 'meldungen') %}
+          {{ messages | count if messages is not none else none }}
+        attributes:
+          meldungen: "{{ state_attr('sensor.biosync_v4_diagnostic_messages', 'meldungen') }}"
+      - name: BioSync Diagnosestufe
+        unique_id: biosync_v4_diagnostic_level
+        default_entity_id: sensor.biosync_v4_diagnostic_level
+        state: >-
+          {% set alarm = states('binary_sensor.biosync_v4_alarm') %}
+          {% set warnings = state_attr('sensor.biosync_v4_process_warnings', 'meldungen') %}
+          {% set missing = state_attr('sensor.biosync_v4_process_warnings', 'daten_fehlend') %}
+          {% set ns = namespace(unknown=false) %}
+          {% for cause in ['communication_problem', 'pump_fault', 'vent_fault',
+                           'raw_invalid', 'configuration_problem', 'out_of_geometry'] %}
+            {% if states('binary_sensor.biosync_v4_' ~ cause) not in ['on', 'off'] %}
+              {% set ns.unknown = true %}
+            {% endif %}
+          {% endfor %}
+          {% if alarm == 'on' %}ALARM
+          {% elif alarm != 'off' or ns.unknown or warnings is none or missing is none
+                or warnings | count > 0 or missing | count > 0
+                or states('input_boolean.biosync_maintenance') not in ['on', 'off'] %}WARNUNG
+          {% elif is_state('input_boolean.biosync_maintenance', 'on') %}INFO
+          {% else %}OK{% endif %}
+      - name: BioSync Diagnoseinfo
+        unique_id: biosync_v4_diagnostic_info
+        default_entity_id: sensor.biosync_v4_diagnostic_info
+        state: >-
+          {% set messages = state_attr('sensor.biosync_v4_diagnostic_causes', 'meldungen') %}
+          {{ (messages[0] if messages else 'Keine Hinweise' if messages is not none
+              else 'Diagnosedaten fehlen') | truncate(200, true) }}
+      - name: BioSync Diagnosekurztext
+        unique_id: biosync_v4_diagnostic_shorttext
+        default_entity_id: sensor.biosync_v4_diagnostic_shorttext
+        state: >-
+          {{ states('sensor.biosync_v4_diagnostic_level') }} –
+          {{ states('sensor.biosync_v4_diagnostic_causes') }} Hinweise

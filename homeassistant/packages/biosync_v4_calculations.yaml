@@ -1,0 +1,204 @@
+---
+input_number:
+  biosync_v4_empty_distance:
+    name: BioSync Abstand bei leerem Behälter
+    min: 0
+    max: 500
+    step: 0.1
+    unit_of_measurement: cm
+  biosync_v4_full_distance:
+    name: BioSync Abstand bei vollem Behälter
+    min: 0
+    max: 500
+    step: 0.1
+    unit_of_measurement: cm
+
+input_boolean:
+  biosync_v4_geometry_initialized:
+    name: BioSync Geometrie initialisiert
+
+automation:
+  - id: biosync_v4_initialize_geometry
+    alias: BioSync – Geometriebeispiele einmalig setzen
+    trigger:
+      - platform: homeassistant
+        event: start
+    condition:
+      - condition: state
+        entity_id: input_boolean.biosync_v4_geometry_initialized
+        state: "off"
+    action:
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_empty_distance
+        data:
+          value: 170
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_full_distance
+        data:
+          value: 0
+      - service: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.biosync_v4_geometry_initialized
+
+homeassistant:
+  customize:
+    sensor.biosync_v4_level_mean_14d:
+      friendly_name: BioSync Füllstand Mittelwert 14 Tage
+    sensor.biosync_v4_temperature_mean_14d:
+      friendly_name: BioSync Temperatur Mittelwert 14 Tage
+    sensor.biosync_v4_turbidity_mean_14d:
+      friendly_name: BioSync Trübung Mittelwert 14 Tage
+    sensor.biosync_v4_tds_mean_14d:
+      friendly_name: BioSync TDS Mittelwert 14 Tage
+
+sensor:
+  - platform: statistics
+    name: biosync_v4_level_mean_14d
+    unique_id: biosync_v4_level_mean_14d
+    entity_id: sensor.biosync_v4_level_cm
+    state_characteristic: average_step
+    max_age:
+      days: 14
+    sampling_size: 2000000
+  - platform: statistics
+    name: biosync_v4_temperature_mean_14d
+    unique_id: biosync_v4_temperature_mean_14d
+    entity_id: sensor.biosync_v4_temperature
+    state_characteristic: average_step
+    max_age:
+      days: 14
+    sampling_size: 2000000
+  - platform: statistics
+    name: biosync_v4_turbidity_mean_14d
+    unique_id: biosync_v4_turbidity_mean_14d
+    entity_id: sensor.biosync_v4_turbidity
+    state_characteristic: average_step
+    max_age:
+      days: 14
+    sampling_size: 2000000
+  - platform: statistics
+    name: biosync_v4_tds_mean_14d
+    unique_id: biosync_v4_tds_mean_14d
+    entity_id: sensor.biosync_v4_tds
+    state_characteristic: average_step
+    max_age:
+      days: 14
+    sampling_size: 2000000
+
+template:
+  - sensor:
+      - name: BioSync Füllstand Höhe
+        unique_id: biosync_v4_level_cm
+        default_entity_id: sensor.biosync_v4_level_cm
+        unit_of_measurement: cm
+        state_class: measurement
+        availability: >-
+          {% set d = states('sensor.biosync_v4_distance') %}
+          {% set e = states('input_number.biosync_v4_empty_distance') %}
+          {% set f = states('input_number.biosync_v4_full_distance') %}
+          {{ is_number(d) and is_number(e) and is_number(f)
+             and e | float(0) > f | float(0) >= 0 }}
+        state: >-
+          {% set d = states('sensor.biosync_v4_distance') %}
+          {% set e = states('input_number.biosync_v4_empty_distance') %}
+          {% set f = states('input_number.biosync_v4_full_distance') %}
+          {% if is_number(d) and is_number(e) and is_number(f)
+                and e | float(0) > f | float(0) >= 0 %}
+            {{ ([0, e | float - d | float] | max) | round(2) }}
+          {% else %}{{ none }}{% endif %}
+      - name: BioSync Füllstand Prozent
+        unique_id: biosync_v4_level_percent
+        default_entity_id: sensor.biosync_v4_level_percent
+        unit_of_measurement: "%"
+        state_class: measurement
+        availability: >-
+          {% set d = states('sensor.biosync_v4_distance') %}
+          {% set e = states('input_number.biosync_v4_empty_distance') %}
+          {% set f = states('input_number.biosync_v4_full_distance') %}
+          {{ is_number(d) and is_number(e) and is_number(f)
+             and e | float(0) > f | float(0) >= 0 }}
+        state: >-
+          {% set d = states('sensor.biosync_v4_distance') %}
+          {% set e = states('input_number.biosync_v4_empty_distance') %}
+          {% set f = states('input_number.biosync_v4_full_distance') %}
+          {% if is_number(d) and is_number(e) and is_number(f)
+                and e | float(0) > f | float(0) >= 0 %}
+            {% set p = 100 * (e | float - d | float) / (e | float - f | float) %}
+            {{ ([100, [0, p] | max] | min) | round(2) }}
+          {% else %}{{ none }}{% endif %}
+      - name: BioSync Füllstand Abweichung
+        unique_id: biosync_v4_level_deviation_percent
+        default_entity_id: sensor.biosync_v4_level_deviation_percent
+        unit_of_measurement: "%"
+        state_class: measurement
+        availability: >-
+          {{ is_number(states('sensor.biosync_v4_level_cm'))
+             and is_number(states('sensor.biosync_v4_level_mean_14d'))
+             and states('sensor.biosync_v4_level_mean_14d') | float(0) > 0 }}
+        state: >-
+          {% set v = states('sensor.biosync_v4_level_cm') %}
+          {% set m = states('sensor.biosync_v4_level_mean_14d') %}
+          {% if is_number(v) and is_number(m) and m | float(0) > 0 %}
+            {{ (100 * (v | float - m | float) / (m | float)) | round(2) }}
+          {% else %}{{ none }}{% endif %}
+      - name: BioSync TDS Abweichung
+        unique_id: biosync_v4_tds_deviation_percent
+        default_entity_id: sensor.biosync_v4_tds_deviation_percent
+        unit_of_measurement: "%"
+        state_class: measurement
+        availability: >-
+          {{ is_number(states('sensor.biosync_v4_tds'))
+             and is_number(states('sensor.biosync_v4_tds_mean_14d'))
+             and states('sensor.biosync_v4_tds_mean_14d') | float(0) > 0 }}
+        state: >-
+          {% set v = states('sensor.biosync_v4_tds') %}
+          {% set m = states('sensor.biosync_v4_tds_mean_14d') %}
+          {% if is_number(v) and is_number(m) and m | float(0) > 0 %}
+            {{ (100 * (v | float - m | float) / (m | float)) | round(2) }}
+          {% else %}{{ none }}{% endif %}
+      - name: BioSync Trübung Abweichung
+        unique_id: biosync_v4_turbidity_deviation_percent
+        default_entity_id: sensor.biosync_v4_turbidity_deviation_percent
+        unit_of_measurement: "%"
+        state_class: measurement
+        availability: >-
+          {{ is_number(states('sensor.biosync_v4_turbidity'))
+             and is_number(states('sensor.biosync_v4_turbidity_mean_14d'))
+             and states('sensor.biosync_v4_turbidity_mean_14d') | float(0) > 0 }}
+        state: >-
+          {% set v = states('sensor.biosync_v4_turbidity') %}
+          {% set m = states('sensor.biosync_v4_turbidity_mean_14d') %}
+          {% if is_number(v) and is_number(m) and m | float(0) > 0 %}
+            {{ (100 * (v | float - m | float) / (m | float)) | round(2) }}
+          {% else %}{{ none }}{% endif %}
+      - name: BioSync Temperatur Differenz
+        unique_id: biosync_v4_temperature_difference
+        default_entity_id: sensor.biosync_v4_temperature_difference
+        unit_of_measurement: "°C"
+        state_class: measurement
+        availability: >-
+          {{ is_number(states('sensor.biosync_v4_temperature'))
+             and is_number(states('sensor.biosync_v4_temperature_mean_14d')) }}
+        state: >-
+          {% set v = states('sensor.biosync_v4_temperature') %}
+          {% set m = states('sensor.biosync_v4_temperature_mean_14d') %}
+          {% if is_number(v) and is_number(m) %}
+            {{ (v | float - m | float) | round(2) }}
+          {% else %}{{ none }}{% endif %}
+      - name: BioSync TDS/NTU Verhältnis
+        unique_id: biosync_v4_tds_ntu_ratio
+        default_entity_id: sensor.biosync_v4_tds_ntu_ratio
+        unit_of_measurement: ppm/NTU
+        state_class: measurement
+        availability: >-
+          {{ is_number(states('sensor.biosync_v4_tds'))
+             and is_number(states('sensor.biosync_v4_turbidity'))
+             and states('sensor.biosync_v4_turbidity') | float(0) > 0 }}
+        state: >-
+          {% set tds = states('sensor.biosync_v4_tds') %}
+          {% set ntu = states('sensor.biosync_v4_turbidity') %}
+          {% if is_number(tds) and is_number(ntu) and ntu | float(0) > 0 %}
+            {{ (tds | float / (ntu | float)) | round(2) }}
+          {% else %}{{ none }}{% endif %}

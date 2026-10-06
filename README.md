@@ -22,7 +22,7 @@ RelayNode  ─RS-485─┘               └─Serial2 9600─> Nextion
   Wartungslogik oder Alarmentscheidung.
 - `ha-bridge`: Python-USB/MQTT-Bridge mit Discovery und Plausibilitätsprüfung;
   Kalibrierung und Umrechnung liegen im optionalen Home-Assistant-Paket.
-- `homeassistant/packages/biosync.yaml`: Beispiel für Wartungsmodus,
+- `homeassistant/packages/biosync_v4.yaml`: Beispiel für Wartungsmodus,
   Recorder-Pause und Grenzwertbenachrichtigungen.
 
 ## Hardware und Flashen
@@ -199,7 +199,7 @@ Die Bridge publiziert rohe Sensormesswerte; sie verwirft lediglich nicht
 endliche Werte und markiert Werte außerhalb plausibler Rohbereiche als
 `UNKNOWN`: `DIST` 0–500 cm, `TMP` −20–60 °C sowie `TUR`/`TDS` 0–1023
 (Grenzen inklusive). Die Kalibrierung findet im optionalen Home-Assistant-Paket
-[`homeassistant/packages/biosync.yaml`](homeassistant/packages/biosync.yaml)
+[`homeassistant/packages/biosync_v4.yaml`](homeassistant/packages/biosync_v4.yaml)
 statt. Es stellt anpassbare `input_number`-Helfer und daraus abgeleitete
 kalibrierte Sensoren bereit. Die Kalibrierwerte bleiben in Home Assistant
 erhalten und werden nicht im DisplayNode-EEPROM gespeichert.
@@ -219,6 +219,16 @@ Stützpunkte und TDS-Polynom sollten anhand realer Sensoren und Referenzlösunge
 kalibriert werden. Distanz und Temperatur folgen `(Rohwert + Offset) * Scale`.
 Der Rohwert bleibt zusätzlich als eigene Entity verfügbar. Die Kalibrierhelfer
 und Grenzwerte funktionieren nur, wenn das HA-Paket eingebunden ist.
+
+Optional ergänzt `homeassistant/packages/biosync_v4_calculations.yaml` das
+Kalibrierpaket um Füllstand, 14-Tage-Mittel und neutrale Trends.
+`homeassistant/packages/biosync_v4_diagnostics.yaml` benötigt beide Pakete und
+ergänzt technische Diagnosen sowie gemeinsame Warnungs- und Ursachenlisten.
+Die Trends belegen keine biologische Aktivität oder Reinigungsleistung;
+willkürliche Legacy-Biologie-Scores werden nicht durch erfundene Formeln ersetzt.
+Wartung unterdrückt die neuen Diagnosen nicht. Installation, Entity-Zuordnung,
+Statistikgrenzen und manuelle Migration sind ausführlich unter
+[`homeassistant/README.md`](homeassistant/README.md) beschrieben.
 
 ## Tests und Home Assistant
 
