@@ -225,10 +225,42 @@ kalibriert werden. Distanz und Temperatur folgen `(Rohwert + Offset) * Scale`.
 Der Rohwert bleibt zusätzlich als eigene Entity verfügbar. Die Kalibrierhelfer
 und Grenzwerte funktionieren nur, wenn das HA-Paket eingebunden ist.
 
+## Nextion über Home Assistant befüllen
+
+Die HA-Pakete
+[`biosync_v4.yaml`](homeassistant/packages/biosync_v4.yaml) (Kalibrierung) und
+[`biosync_nextion.yaml`](homeassistant/packages/biosync_nextion.yaml) (Anzeige)
+gemeinsam nach `/config/packages/` kopieren, Packages aktivieren und HA neu
+starten. [Installation](homeassistant/README.md).
+
+| Felder | Anzeige |
+|---|---|
+| `nDist`, `nTemp` | Füllstand in ganzen %, Temperatur in ganzen °C |
+| `tTurb`, `tTDS` | Kalibrierte NTU/ppm mit zwei Nachkommastellen, ohne Einheit |
+| `tPump`, `tVent` | ERROR > ACTIVE > IDLE |
+| `cPumpActive`, `cPumpError`, `cVentActive`, `cVentError` | 0/1 zum priorisierten Gerätestatus |
+| `cSystemIdle` | 1 wenn beide Geräte IDLE, sonst 0; HMI-Namen noch prüfen |
+
+`sensor.biosync_v4_fill_percent` verwendet
+`clamp((170 - Abstand) / 150 * 100, 0, 100)`. Die Distanzen leer/voll sind als
+persistente HA-Helfer `input_number.biosync_v4_distance_empty` (170 cm) und
+`input_number.biosync_v4_distance_full` (20 cm) anpassbar.
+Bei 20 cm die hardwareseitige Mindestmessdistanz des Ultraschallsensors prüfen.
+Die queued-Automation sendet pro Feld einen ASCII-Befehl (≤120 Zeichen,
+retain=false) bei Werteänderung, HA-Start, Bridge-Verfügbarkeit `online` und
+den ASCII-Hexmeldungen `BTN_REFRESH`/`SCR_WAKE`. Fehlende Messwerte: Text `--`,
+Number nicht senden. Kalibrierung ausschließlich über HA-`input_number`-
+Entities; `CAL_*`, SD-/RTC-Felder werden nicht vom DisplayNode V4 befüllt.
+Farben bleiben unverändert.
+
+**Noch am HMI prüfen:** Das Alt-Repo war nicht zugänglich (404), deshalb ist
+`cSystemIdle` nicht quellverifiziert. Systemfelder müssen seitenübergreifend
+erreichbar sein; siehe [Feldbefehle und HMI-Voraussetzungen](ha-addon/biosync_bridge/DOCS.md#nextion-über-home-assistant-befüllen).
+
 ## Tests und Home Assistant
 
 ```sh
-python -m pip install -r ha-bridge/requirements.txt ruff==0.16.10
+python -m pip install -r ha-bridge/requirements.txt -r ha-bridge/requirements-test.txt ruff==0.16.10
 ruff check ha-bridge/
 ruff format --check ha-bridge/
 PYTHONPATH=ha-bridge python -m unittest discover -s ha-bridge/tests -v
