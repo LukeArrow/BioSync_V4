@@ -143,7 +143,9 @@ A2 → `VENT_ACTIVE`, A3 → `VENT_ERROR`. Die Error-Kanäle (A1/A3) liefern bei
 eingeschalteter Error-LED `ERROR`, sonst `IDLE`, niemals `ACTIVE`;
 nicht verfügbare Zustände bleiben `UNKNOWN`.
 
-Der Mega gibt einmal pro Sekunde genau diese USB-Felder aus:
+Der Mega prüft die Werte jede Sekunde auf veraltete RS-485-Daten, sendet diese
+Telemetriezeile über USB aber nur, wenn sich ein Wert oder der ONLINE/OFFLINE-
+Status geändert hat:
 
 ```text
 $TELEMETRY;DIST=..;TMP=..;TUR=..;TDS=..;PUMP_ACTIVE=..;PUMP_ERROR=..;VENT_ACTIVE=..;VENT_ERROR=..
@@ -187,8 +189,11 @@ Nextion-Tastendrücke gehen als Hex-Bytes auf USB:
 
 USB-Kommandos sind zeilenweise. `NEX <Nextion-Befehl>` reicht einen Befehl an
 Serial2 weiter und fügt die drei Nextion-Endbytes `0xFF` an.
-`STATUS_REQUEST` bestätigt die Verbindung. EEPROM-Konfiguration und
-Kalibrierkommandos sind nicht Teil des Protokolls. Über
+`STATUS_REQUEST` sendet der Mega sofort die aktuelle Telemetrie und Relaiszustände
+und bestätigt anschließend die Anfrage mit `$ACK;COMMAND=STATUS_REQUEST`.
+Die Bridge fordert den Status nach MQTT-/USB-Reconnect und nach der HA-Birth-Message
+`homeassistant/status=online` erneut an, damit Home Assistant den aktuellen Stand
+erhält. EEPROM-Konfiguration und Kalibrierkommandos sind nicht Teil des Protokolls. Über
 `biosync_v4/command/nextion` kann HA beliebige Nextion-Kommandos senden.
 Die Firmware hält keine lokale Fallback-Anzeige aktuell: Bei HA-Ausfall bleibt
 das Nextion auf dem zuletzt empfangenen Inhalt stehen.

@@ -55,6 +55,11 @@ installiert, ohne das Alpine-System-Python zu verändern.
 
 ## Changelog
 
+### 1.2.1
+
+- Telemetrie nur noch bei Änderungen senden und aktuellen DisplayNode-Status
+  nach MQTT-/USB-Reconnect sowie HA-Neustart abrufen.
+
 ### 1.0.0
 
 - Erstes Supervisor-Add-on mit USB/UART, bashio-Optionen und MQTT-Service-Erkennung.

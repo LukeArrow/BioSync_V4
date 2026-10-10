@@ -22,6 +22,10 @@ unsigned long sensorUpdatedAt = 0;
 unsigned long relayUpdatedAt = 0;
 unsigned long lastTelemetryAt = 0;
 bool relayChanged = false;
+char lastTelemetry[192] = "";
+
+void sendTelemetry(bool force);
+void sendRelay();
 
 bool validNumber(const char *text) {
   if (text == NULL || *text == '\0') {
@@ -45,6 +49,8 @@ void handleUsbCommand(char *command) {
     return;
   }
   if (strcmp(command, "STATUS_REQUEST") == 0) {
+    sendTelemetry(true);
+    sendRelay();
     Serial.println("$ACK;COMMAND=STATUS_REQUEST");
   }
 }
@@ -178,7 +184,7 @@ void readRs485(HardwareSerial &port, char *buffer, uint8_t &length, bool sensor)
   }
 }
 
-void sendTelemetry() {
+void buildTelemetry(char *out, size_t size) {
   const unsigned long now = millis();
   if (sensorUpdatedAt == 0 || now - sensorUpdatedAt > SENSOR_STALE_MS) {
     strcpy(distanceValue, "UNKNOWN");
@@ -194,32 +200,25 @@ void sendTelemetry() {
       strcpy(relayStates[index], "UNKNOWN");
     }
   }
-  Serial.print("$TELEMETRY;DIST=");
-  Serial.print(distanceValue);
-  Serial.print(";TMP=");
-  Serial.print(temperatureValue);
-  Serial.print(";TUR=");
-  Serial.print(turbidityValue);
-  Serial.print(";TDS=");
-  Serial.print(tdsValue);
-  Serial.print(";PUMP_ACTIVE=");
-  Serial.print(relayStates[0]);
-  Serial.print(";PUMP_ERROR=");
-  Serial.print(relayStates[1]);
-  Serial.print(";VENT_ACTIVE=");
-  Serial.print(relayStates[2]);
-  Serial.print(";VENT_ERROR=");
-  Serial.print(relayStates[3]);
-  Serial.print(";SENSOR_NODE=");
-  Serial.print(
-      sensorUpdatedAt != 0 && now - sensorUpdatedAt <= SENSOR_STALE_MS
-          ? "ONLINE"
-          : "OFFLINE");
-  Serial.print(";RELAY_NODE=");
-  Serial.println(
-      relayUpdatedAt != 0 && now - relayUpdatedAt <= RELAY_STALE_MS
-          ? "ONLINE"
-          : "OFFLINE");
+  snprintf(
+      out, size,
+      "$TELEMETRY;DIST=%s;TMP=%s;TUR=%s;TDS=%s;PUMP_ACTIVE=%s;PUMP_ERROR=%s;"
+      "VENT_ACTIVE=%s;VENT_ERROR=%s;SENSOR_NODE=%s;RELAY_NODE=%s",
+      distanceValue, temperatureValue, turbidityValue, tdsValue, relayStates[0],
+      relayStates[1], relayStates[2], relayStates[3],
+      sensorUpdatedAt != 0 && now - sensorUpdatedAt <= SENSOR_STALE_MS ? "ONLINE"
+                                                                       : "OFFLINE",
+      relayUpdatedAt != 0 && now - relayUpdatedAt <= RELAY_STALE_MS ? "ONLINE"
+                                                                    : "OFFLINE");
+}
+
+void sendTelemetry(bool force) {
+  char line[sizeof(lastTelemetry)];
+  buildTelemetry(line, sizeof(line));
+  if (force || strcmp(line, lastTelemetry) != 0) {
+    strcpy(lastTelemetry, line);
+    Serial.println(line);
+  }
 }
 
 void sendRelay() {
@@ -290,6 +289,6 @@ void loop() {
   }
   if (millis() - lastTelemetryAt >= TELEMETRY_INTERVAL_MS) {
     lastTelemetryAt = millis();
-    sendTelemetry();
+    sendTelemetry(false);
   }
 }
