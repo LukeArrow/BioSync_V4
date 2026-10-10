@@ -242,7 +242,7 @@ class BridgeReconnectTests(unittest.TestCase):
         lost_port = MagicMock()
         lost_port.write.side_effect = serial.SerialException("Schreibfehler")
         restored_port = MagicMock()
-        restored_port.readline.side_effect = KeyboardInterrupt()
+        restored_port.readline.side_effect = [b"", KeyboardInterrupt()]
         self.bridge.serial = lost_port
         with self.assertLogs("biosync_bridge", level="WARNING"):
             self.bridge._on_message(
