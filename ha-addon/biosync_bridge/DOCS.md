@@ -54,6 +54,11 @@ Die MQTT-Integration muss mit demselben Broker verbunden sein und Discovery
 aktiviert haben. Die Bridge veröffentlicht rohe Messwerte, Node-Status und
 einen Button zur Statusabfrage unter dem HA-Discovery-Präfix `homeassistant/`.
 Das konfigurierte `mqtt_prefix` betrifft die BioSync-Daten-/Command-Topics.
+Der Mega prüft veraltete RS-485-Daten jede Sekunde, sendet Telemetrie über USB
+aber nur bei einer Änderung einschließlich `UNKNOWN`- und ONLINE/OFFLINE-Wechseln.
+Bei MQTT-Verbindung, USB-Reconnect und der HA-Birth-Message
+`homeassistant/status=online` fordert die Bridge den aktuellen Status mit
+`STATUS_REQUEST` erneut an.
 
 Das bestehende Paket
 [`homeassistant/packages/biosync.yaml`](../../homeassistant/packages/biosync.yaml)

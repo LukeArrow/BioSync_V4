@@ -12,7 +12,7 @@ ADDON = ROOT / "ha-addon" / "biosync_bridge"
 
 class AddonTests(unittest.TestCase):
     def test_addon_version_is_bumped(self):
-        self.assertIn('version: "1.2.0"', (ADDON / "config.yaml").read_text())
+        self.assertIn('version: "1.2.1"', (ADDON / "config.yaml").read_text())
 
     def test_build_context_contains_unchanged_bridge_sources(self):
         source = ROOT / "ha-bridge"

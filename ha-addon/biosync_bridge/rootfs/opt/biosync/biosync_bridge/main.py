@@ -18,6 +18,7 @@ from .telemetry_parser import (
 
 LOG = logging.getLogger("biosync_bridge")
 ROOT = os.getenv("BIOSYNC_MQTT_PREFIX", "biosync_v4")
+HA_STATUS_TOPIC = "homeassistant/status"
 RECONNECT_MIN_DELAY = 1
 RECONNECT_MAX_DELAY = 60
 
@@ -58,10 +59,22 @@ class BioSyncBridge:
             )
         publish_discovery(client, ROOT)
         client.publish(f"{ROOT}/config", "", retain=True)
-        client.subscribe([(f"{ROOT}/command", 0), (f"{ROOT}/command/nextion", 0)])
+        client.subscribe(
+            [
+                (f"{ROOT}/command", 0),
+                (f"{ROOT}/command/nextion", 0),
+                (HA_STATUS_TOPIC, 0),
+            ]
+        )
+        self.send_command("STATUS_REQUEST")
 
     def _on_message(self, client, userdata, message):
         payload = message.payload.decode("utf-8", errors="replace").strip()
+        if message.topic == HA_STATUS_TOPIC:
+            if payload == "online":
+                publish_discovery(client, ROOT)
+                self.send_command("STATUS_REQUEST")
+            return
         if message.topic == f"{ROOT}/command/nextion":
             if (
                 payload
@@ -122,6 +135,7 @@ class BioSyncBridge:
                         raw = self.serial.readline()
                     if reopened:
                         LOG.info("USB-Verbindung hergestellt")
+                        self.send_command("STATUS_REQUEST")
                 except (serial.SerialException, OSError) as error:
                     LOG.warning(
                         "USB-Verbindung verloren: %s; neuer Versuch in %s s",

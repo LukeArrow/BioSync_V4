@@ -295,16 +295,31 @@ class FirmwareLogicTests(unittest.TestCase):
   assert(
       Serial.output.find(";SENSOR_NODE=OFFLINE;RELAY_NODE=OFFLINE") !=
       std::string::npos);
+  const size_t firstTelemetry = Serial.output.find("$TELEMETRY;");
+  assert(firstTelemetry != std::string::npos);
+  assert(strlen(lastTelemetry) > 160 && strlen(lastTelemetry) < sizeof(lastTelemetry));
   loop();
   assert(!relayChanged);
   assert(Serial.output.find("$RELAY;PUMP_ACTIVE=UNKNOWN") != std::string::npos);
+  assert(Serial.output.find("$TELEMETRY;", firstTelemetry + 1) == std::string::npos);
   Serial.output.clear();
   sensorUpdatedAt = millis();
   relayUpdatedAt = millis();
-  sendTelemetry();
+  sendTelemetry(false);
   assert(
       Serial.output.find(";SENSOR_NODE=ONLINE;RELAY_NODE=ONLINE") !=
       std::string::npos);
+  const size_t onlineTelemetry = Serial.output.find("$TELEMETRY;");
+  sendTelemetry(false);
+  assert(Serial.output.find("$TELEMETRY;", onlineTelemetry + 1) == std::string::npos);
+  Serial.output.clear();
+  char status[] = "STATUS_REQUEST";
+  handleUsbCommand(status);
+  assert(Serial.output.find("$TELEMETRY;") == 0);
+  assert(Serial.output.find("$RELAY;", Serial.output.find("$TELEMETRY;")) !=
+         std::string::npos);
+  assert(Serial.output.rfind("$ACK;COMMAND=STATUS_REQUEST\n") ==
+         Serial.output.size() - strlen("$ACK;COMMAND=STATUS_REQUEST\n"));
 """,
         )
 
@@ -315,13 +330,16 @@ class FirmwareLogicTests(unittest.TestCase):
   char get[] = "GET";
   char set[] = "SET DIST_OFFSET 10";
   char calibration[] = "CAL_SAVE";
+  char status[] = "STATUS_REQUEST";
   handleUsbCommand(get);
   handleUsbCommand(set);
   handleUsbCommand(calibration);
   assert(Serial.output.empty());
-  char status[] = "STATUS_REQUEST";
   handleUsbCommand(status);
-  assert(Serial.output == "$ACK;COMMAND=STATUS_REQUEST\n");
+  assert(Serial.output.find("$TELEMETRY;") == 0);
+  assert(Serial.output.find("$RELAY;") != std::string::npos);
+  assert(Serial.output.rfind("$ACK;COMMAND=STATUS_REQUEST\n") ==
+         Serial.output.size() - strlen("$ACK;COMMAND=STATUS_REQUEST\n"));
 """,
         )
 

@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, call, patch
 
 import serial
 from biosync_bridge.main import (
+    HA_STATUS_TOPIC,
     RECONNECT_MAX_DELAY,
     RECONNECT_MIN_DELAY,
     ROOT,
@@ -48,8 +49,18 @@ class BridgeReconnectTests(unittest.TestCase):
             for _ in range(2):
                 self.client.on_connect(self.client, None, {}, 0, None)
             self.assertEqual(discovery.call_args_list, [call(self.client, ROOT)] * 2)
-            send.assert_not_called()
+            self.assertEqual(
+                send.call_args_list,
+                [call("STATUS_REQUEST"), call("STATUS_REQUEST")],
+            )
             self.assertEqual(self.client.subscribe.call_count, 2)
+            self.client.subscribe.assert_called_with(
+                [
+                    (f"{ROOT}/command", 0),
+                    (f"{ROOT}/command/nextion", 0),
+                    (HA_STATUS_TOPIC, 0),
+                ]
+            )
             self.assertEqual(
                 self.client.publish.call_args_list,
                 [
@@ -61,6 +72,29 @@ class BridgeReconnectTests(unittest.TestCase):
             with self.assertLogs("biosync_bridge", level="ERROR"):
                 self.client.on_connect(self.client, None, {}, 1, None)
             self.assertEqual(discovery.call_count, 2)
+
+    def test_home_assistant_birth_requests_status_but_offline_does_not(self):
+        with (
+            patch("biosync_bridge.main.publish_discovery") as discovery,
+            patch.object(self.bridge, "send_command") as send,
+        ):
+            self.bridge._on_message(
+                self.client,
+                None,
+                MagicMock(topic=HA_STATUS_TOPIC, payload=b"online"),
+            )
+            discovery.assert_called_once_with(self.client, ROOT)
+            send.assert_called_once_with("STATUS_REQUEST")
+
+            discovery.reset_mock()
+            send.reset_mock()
+            self.bridge._on_message(
+                self.client,
+                None,
+                MagicMock(topic=HA_STATUS_TOPIC, payload=b"offline"),
+            )
+            discovery.assert_not_called()
+            send.assert_not_called()
 
     def test_usb_loss_is_unavailable_until_fresh_telemetry_after_reconnect(self):
         telemetry = (
@@ -143,7 +177,7 @@ class BridgeReconnectTests(unittest.TestCase):
         self.assertEqual(open_port.call_count, 2)
         open_port.assert_called_with("/dev/test", 115200, timeout=0.2, write_timeout=1)
         sleep.assert_called_once_with(RECONNECT_MIN_DELAY)
-        port.write.assert_not_called()
+        port.write.assert_called_once_with(b"STATUS_REQUEST\n")
         port.close.assert_called_once()
         self.assert_shutdown()
 
@@ -163,7 +197,7 @@ class BridgeReconnectTests(unittest.TestCase):
             self.bridge.run()
         sleep.assert_called_once_with(RECONNECT_MIN_DELAY)
         lost_port.close.assert_called_once()
-        restored_port.write.assert_not_called()
+        restored_port.write.assert_called_once_with(b"STATUS_REQUEST\n")
         restored_port.close.assert_called_once()
         self.assert_shutdown()
 
@@ -222,7 +256,7 @@ class BridgeReconnectTests(unittest.TestCase):
             self.assertLogs("biosync_bridge", level="INFO"),
         ):
             self.bridge.run()
-        restored_port.write.assert_not_called()
+        restored_port.write.assert_called_once_with(b"STATUS_REQUEST\n")
         self.assert_shutdown()
 
     def test_usb_close_failure_does_not_prevent_shutdown(self):
