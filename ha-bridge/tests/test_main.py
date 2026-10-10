@@ -1,3 +1,5 @@
+import json
+import logging
 import unittest
 from unittest.mock import MagicMock, call, patch
 
@@ -26,6 +28,88 @@ class BridgeReconnectTests(unittest.TestCase):
         self.client.loop_stop.assert_called_once()
         self.client.disconnect.assert_called_once()
         self.assertIsNone(self.bridge.serial)
+
+    def test_mqtt_connection_logs_success_only_when_connected(self):
+        with (
+            patch("biosync_bridge.main.publish_discovery"),
+            patch.object(self.bridge, "send_command"),
+            self.assertLogs("biosync_bridge", level="INFO") as logs,
+        ):
+            self.bridge._on_connect(self.client, None, {}, 0, None)
+        self.assertEqual(logs.output, ["INFO:biosync_bridge:MQTT verbunden"])
+        with self.assertLogs("biosync_bridge", level="INFO") as logs:
+            self.bridge._on_connect(self.client, None, {}, 1, None)
+        self.assertEqual(len(logs.records), 1)
+        self.assertEqual(logs.records[0].levelno, logging.ERROR)
+
+    def test_unknown_usb_line_warns_with_escaped_content_without_publish(self):
+        line = "Datenmüll\x00\x1b"
+        with self.assertLogs("biosync_bridge", level="WARNING") as logs:
+            self.bridge._handle_line(line)
+        self.assertEqual(
+            logs.output,
+            [f"WARNING:biosync_bridge:Unbekannte USB-Zeile verworfen: {line!r}"],
+        )
+        self.client.publish.assert_not_called()
+
+    def test_ack_logs_debug_without_warning_or_publish(self):
+        line = "$ACK;COMMAND=STATUS_REQUEST"
+        with self.assertLogs("biosync_bridge", level="DEBUG") as logs:
+            self.bridge._handle_line(line)
+        self.assertEqual(
+            logs.output,
+            [
+                f"DEBUG:biosync_bridge:USB RX: {line}",
+                f"DEBUG:biosync_bridge:Bestätigung vom Mega: {line}",
+            ],
+        )
+        self.client.publish.assert_not_called()
+
+    def test_empty_usb_line_does_not_log_or_publish(self):
+        with self.assertNoLogs("biosync_bridge", level="DEBUG"):
+            self.bridge._handle_line("")
+        self.client.publish.assert_not_called()
+
+    def test_telemetry_logs_rx_and_parsed_mqtt_state(self):
+        line = (
+            "$TELEMETRY;DIST=100;TMP=25;TUR=512;TDS=420;"
+            "PUMP_ACTIVE=IDLE;PUMP_ERROR=IDLE;VENT_ACTIVE=IDLE;VENT_ERROR=IDLE"
+        )
+        with self.assertLogs("biosync_bridge", level="DEBUG") as logs:
+            self.bridge._handle_line(line)
+        self.client.publish.assert_called_once()
+        topic, payload = self.client.publish.call_args.args
+        self.assertEqual(topic, f"{ROOT}/state")
+        self.assertEqual(self.client.publish.call_args.kwargs, {"retain": True})
+        self.assertEqual(
+            logs.output,
+            [
+                f"DEBUG:biosync_bridge:USB RX: {line}",
+                f"DEBUG:biosync_bridge:MQTT state: {json.loads(payload)}",
+            ],
+        )
+
+    def test_usb_command_logs_tx_before_writing(self):
+        self.bridge.serial = MagicMock()
+        with self.assertLogs("biosync_bridge", level="DEBUG") as logs:
+            self.bridge.serial.write.side_effect = lambda _: self.assertEqual(
+                logs.output, ["DEBUG:biosync_bridge:USB TX: STATUS_REQUEST"]
+            )
+            self.bridge.send_command("STATUS_REQUEST")
+        self.bridge.serial.write.assert_called_once_with(b"STATUS_REQUEST\n")
+        self.bridge.serial.flush.assert_called_once()
+
+    def test_invalid_telemetry_preserves_warning_without_publish(self):
+        line = "$TELEMETRY;DIST=invalid"
+        with self.assertLogs("biosync_bridge", level="WARNING") as logs:
+            self.bridge._handle_line(line)
+        self.assertEqual(len(logs.records), 1)
+        self.assertTrue(
+            logs.records[0]
+            .getMessage()
+            .startswith(f"Ungültige USB-Zeile verworfen: {line} (")
+        )
+        self.client.publish.assert_not_called()
 
     def test_mqtt_initial_connection_uses_paho_async_retry_and_backoff(self):
         self.client.connect.assert_not_called()
