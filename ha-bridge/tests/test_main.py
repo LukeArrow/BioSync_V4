@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import MagicMock, call, patch
 
@@ -45,9 +46,11 @@ class BridgeReconnectTests(unittest.TestCase):
         with (
             patch("biosync_bridge.main.publish_discovery") as discovery,
             patch.object(self.bridge, "send_command") as send,
+            self.assertLogs("biosync_bridge", level="INFO") as logs,
         ):
             for _ in range(2):
                 self.client.on_connect(self.client, None, {}, 0, None)
+            self.assertEqual(logs.output, ["INFO:biosync_bridge:MQTT verbunden"] * 2)
             self.assertEqual(discovery.call_args_list, [call(self.client, ROOT)] * 2)
             self.assertEqual(
                 send.call_args_list,
@@ -72,6 +75,71 @@ class BridgeReconnectTests(unittest.TestCase):
             with self.assertLogs("biosync_bridge", level="ERROR"):
                 self.client.on_connect(self.client, None, {}, 1, None)
             self.assertEqual(discovery.call_count, 2)
+
+    def test_handle_line_logs_usb_rx_and_mqtt_payload_at_debug(self):
+        relay_fields = (
+            "PUMP_ACTIVE=IDLE;PUMP_ERROR=IDLE;VENT_ACTIVE=IDLE;VENT_ERROR=IDLE"
+        )
+        for line, topic, retain in (
+            (
+                "$TELEMETRY;DIST=100;TMP=25;TUR=512;TDS=420;" + relay_fields,
+                "state",
+                True,
+            ),
+            ("$RELAY;" + relay_fields, "relay", True),
+            ("$NEXTION;BTN_REFRESH", "nextion", False),
+        ):
+            with self.subTest(topic=topic):
+                self.client.publish.reset_mock()
+                with self.assertLogs("biosync_bridge", level="DEBUG") as logs:
+                    self.bridge._handle_line(line)
+                self.client.publish.assert_called_once()
+                args, kwargs = self.client.publish.call_args
+                self.assertEqual(args[0], f"{ROOT}/{topic}")
+                self.assertEqual(kwargs, {"retain": retain})
+                values = args[1] if topic == "nextion" else json.loads(args[1])
+                self.assertEqual(
+                    logs.output,
+                    [
+                        f"DEBUG:biosync_bridge:USB RX: {line}",
+                        f"DEBUG:biosync_bridge:MQTT {topic}: {values}",
+                    ],
+                )
+
+    def test_handle_line_logs_unknown_but_not_empty_line_as_ignored(self):
+        for line in ("Arduino bereit", ""):
+            with self.subTest(line=line):
+                with self.assertLogs("biosync_bridge", level="DEBUG") as logs:
+                    self.bridge._handle_line(line)
+                expected = [f"DEBUG:biosync_bridge:USB RX: {line}"]
+                if line:
+                    expected.append(
+                        "DEBUG:biosync_bridge:Unbekannte USB-Zeile ignoriert: " + line
+                    )
+                self.assertEqual(logs.output, expected)
+                self.client.publish.assert_not_called()
+
+    def test_handle_line_logs_invalid_usb_rx_before_warning(self):
+        line = "$TELEMETRY;DIST=invalid"
+        with self.assertLogs("biosync_bridge", level="DEBUG") as logs:
+            self.bridge._handle_line(line)
+        self.assertEqual(logs.output[0], f"DEBUG:biosync_bridge:USB RX: {line}")
+        self.assertTrue(
+            logs.output[1].startswith(
+                "WARNING:biosync_bridge:Ungültige USB-Zeile verworfen:"
+            )
+        )
+        self.client.publish.assert_not_called()
+
+    def test_send_command_logs_usb_tx_before_writing(self):
+        self.bridge.serial = MagicMock()
+        with self.assertLogs("biosync_bridge", level="DEBUG") as logs:
+            self.bridge.serial.write.side_effect = lambda _: self.assertEqual(
+                logs.output, ["DEBUG:biosync_bridge:USB TX: STATUS_REQUEST"]
+            )
+            self.bridge.send_command("STATUS_REQUEST")
+        self.bridge.serial.write.assert_called_once_with(b"STATUS_REQUEST\n")
+        self.bridge.serial.flush.assert_called_once()
 
     def test_home_assistant_birth_requests_status_but_offline_does_not(self):
         with (

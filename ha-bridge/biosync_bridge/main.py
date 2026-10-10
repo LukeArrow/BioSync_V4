@@ -51,6 +51,7 @@ class BioSyncBridge:
         if reason_code != 0:
             LOG.error("MQTT-Verbindung fehlgeschlagen: %s", reason_code)
             return
+        LOG.info("MQTT verbunden")
         with self.serial_lock:
             client.publish(
                 f"{ROOT}/availability",
@@ -94,6 +95,7 @@ class BioSyncBridge:
                 LOG.warning("USB nicht verbunden; Kommando verworfen: %s", command)
                 return
             try:
+                LOG.debug("USB TX: %s", command)
                 self.serial.write((command + "\n").encode("utf-8"))
                 self.serial.flush()
             except (serial.SerialException, OSError) as error:
@@ -167,19 +169,26 @@ class BioSyncBridge:
                 self._close_serial_locked()
 
     def _handle_line(self, line):
+        LOG.debug("USB RX: %s", line)
         try:
             if line.startswith("$TELEMETRY;"):
-                self._publish_telemetry(parse_telemetry_line(line))
+                values = parse_telemetry_line(line)
+                LOG.debug("MQTT state: %s", values)
+                self._publish_telemetry(values)
             elif line.startswith("$RELAY;"):
+                values = parse_relay_line(line)
+                LOG.debug("MQTT relay: %s", values)
                 self.client.publish(
                     f"{ROOT}/relay",
-                    json.dumps(parse_relay_line(line)),
+                    json.dumps(values),
                     retain=True,
                 )
             elif line.startswith("$NEXTION;"):
-                self.client.publish(
-                    f"{ROOT}/nextion", line[len("$NEXTION;") :], retain=False
-                )
+                values = line[len("$NEXTION;") :]
+                LOG.debug("MQTT nextion: %s", values)
+                self.client.publish(f"{ROOT}/nextion", values, retain=False)
+            elif line:
+                LOG.debug("Unbekannte USB-Zeile ignoriert: %s", line)
         except TelemetryParseError as error:
             LOG.warning("Ungültige USB-Zeile verworfen: %s (%s)", line, error)
 
