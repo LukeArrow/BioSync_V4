@@ -67,6 +67,8 @@ script:
               topic: biosync_v4/command/nextion
               retain: false
               payload: "nDist.val={{ [0, [100, fill | float] | min] | max | round(0) | int }}"
+          - delay:
+              milliseconds: 150
       - if: >-
           {{ is_number(temperature) and
              -2147483648 <= temperature | float <= 2147483647 }}
@@ -76,6 +78,8 @@ script:
               topic: biosync_v4/command/nextion
               retain: false
               payload: "nTemp.val={{ temperature | float | round(0) | int }}"
+          - delay:
+              milliseconds: 150
       # Zahlen statt beliebiger Sensorstrings: keine Quotes, Steuerzeichen oder
       # Einheiten in Nextion-Text; feste Grenzen halten Befehle unter 120 Bytes.
       - repeat:
@@ -95,6 +99,9 @@ script:
                 topic: biosync_v4/command/nextion
                 retain: false
                 payload: "{{ repeat.item }}"
+            # 120 ASCII-Bytes + 3 FF benötigen bei 9600 Baud etwa 129 ms.
+            - delay:
+                milliseconds: 150
 
 automation:
   - id: biosync_initialize_nextion_helpers

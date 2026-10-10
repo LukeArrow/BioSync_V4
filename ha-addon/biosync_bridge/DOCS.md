@@ -140,6 +140,9 @@ Manuell lässt sich `script.biosync_nextion_redraw` in HA ausführen.
 
 Jedes Feld erhält eine eigene nicht-retainierte MQTT-Nachricht auf
 `biosync_v4/command/nextion`: nur druckbares ASCII, maximal 120 Zeichen.
+Zwischen Befehlen liegen 150 ms Pause für den 9600-Baud-Nextion-UART;
+ein vollständiges Neuzeichnen dauert etwa 1,65 Sekunden. Andere Automationen
+sollten nicht gleichzeitig ungepufferte Befehlsserien senden.
 Bei geändertem `mqtt_prefix`/`BIOSYNC_MQTT_PREFIX` die drei Topic-Arten
 im Nextion-Paket anpassen; Entity-IDs bleiben gleich. Fehlende Zahlen
 (`unknown`/`unavailable`) werden nicht an Number-Felder gesendet; Text zeigt

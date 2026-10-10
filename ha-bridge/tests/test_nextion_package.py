@@ -68,6 +68,9 @@ class NextionPackageTests(unittest.TestCase):
                 ]
             for context in contexts:
                 for publish in publishes:
+                    if "delay" in publish:
+                        self.assertGreaterEqual(publish["delay"]["milliseconds"], 150)
+                        continue
                     self.assertEqual(publish["service"], "mqtt.publish")
                     data = publish["data"]
                     self.assertEqual(data["topic"], "biosync_v4/command/nextion")
@@ -77,6 +80,14 @@ class NextionPackageTests(unittest.TestCase):
                     self.assertLessEqual(len(payload), 120)
                     payloads.append(payload)
         return payloads
+
+    def test_each_command_is_paced_for_9600_baud_uart(self):
+        sequence = self.package["script"]["biosync_nextion_redraw"]["sequence"]
+        for action in sequence[1:]:
+            actions = action["then"] if "if" in action else action["repeat"]["sequence"]
+            self.assertEqual(len(actions), 2)
+            self.assertEqual(actions[0]["service"], "mqtt.publish")
+            self.assertGreaterEqual(actions[1]["delay"]["milliseconds"], 150)
 
     def test_fill_formula_limits_helpers_and_invalid_values(self):
         template = self.package["template"][0]["sensor"][0]["state"]
