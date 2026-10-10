@@ -29,6 +29,11 @@ und den Broker-Port nicht ins Internet freigeben.
 Nach Optionsänderungen das Add-on neu starten. Zugangsdaten nur in der
 HA-Konfiguration speichern, nicht in Git oder in öffentlich geteilten Logs.
 
+Mit `log_level: DEBUG` zeigt das Add-on empfangene USB-Zeilen (`USB RX`),
+gesendete Kommandos (`USB TX`) und geparste MQTT-State-Werte. Unbekannte
+USB-Zeilen erscheinen als Warnung mit sichtbar escaped Steuerzeichen;
+`$ACK;`-Bestätigungen werden nur auf DEBUG geloggt.
+
 ## USB und UART
 
 - Der Mega muss am **Home-Assistant-Host** angeschlossen sein. Bei einer VM
