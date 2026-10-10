@@ -1,5 +1,5 @@
 name: BioSync V4 Bridge
-version: "1.2.1"
+version: "1.2.2"
 slug: biosync_bridge
 description: USB-/MQTT-Brücke zwischen BioSync DisplayNode (Mega) und Home Assistant
 url: https://github.com/LukeArrow/BioSync_V4

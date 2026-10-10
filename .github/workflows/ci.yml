@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Abhängigkeiten installieren
-        run: python -m pip install -r ha-bridge/requirements.txt ruff==0.16.10
+        run: python -m pip install -r ha-bridge/requirements.txt -r ha-bridge/requirements-test.txt ruff==0.16.10
       - name: Lint und Formatierung prüfen
         run: |
           ruff check ha-bridge/

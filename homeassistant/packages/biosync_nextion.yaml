@@ -1,0 +1,158 @@
+---
+# Zusätzlich zu biosync_v4.yaml als HA-Paket installieren.
+# Bei anderem mqtt_prefix die drei MQTT-Topics unten anpassen.
+input_number:
+  biosync_v4_distance_empty:
+    name: BioSync Distanz leer
+    min: 0
+    max: 1000
+    step: 0.1
+    unit_of_measurement: cm
+  biosync_v4_distance_full:
+    name: BioSync Distanz voll
+    min: 0
+    max: 1000
+    step: 0.1
+    unit_of_measurement: cm
+
+input_boolean:
+  # Eigener Merker: vorhandene Kalibrierwerte niemals zurücksetzen.
+  biosync_nextion_initialized:
+    name: BioSync Nextion Tankhelfer initialisiert
+
+template:
+  - sensor:
+      - name: BioSync Füllstand Prozent
+        unique_id: biosync_v4_fill_percent
+        default_entity_id: sensor.biosync_v4_fill_percent
+        unit_of_measurement: "%"
+        state_class: measurement
+        state: >-
+          {% set distance = states('sensor.biosync_v4_distance') %}
+          {% set empty = states('input_number.biosync_v4_distance_empty') %}
+          {% set full = states('input_number.biosync_v4_distance_full') %}
+          {% if is_number(distance) and is_number(empty) and is_number(full)
+                and empty | float > full | float %}
+            {{ [0, [100, (empty | float - distance | float)
+                / (empty | float - full | float) * 100] | min] | max | round(2) }}
+          {% else %}
+            {{ none }}
+          {% endif %}
+
+script:
+  biosync_nextion_redraw:
+    alias: BioSync – Nextion vollständig befüllen
+    mode: queued
+    max: 100
+    sequence:
+      - variables:
+          fill: "{{ states('sensor.biosync_v4_fill_percent') }}"
+          temperature: "{{ states('sensor.biosync_v4_temperature') }}"
+          turbidity: "{{ states('sensor.biosync_v4_turbidity') }}"
+          tds: "{{ states('sensor.biosync_v4_tds') }}"
+          pump: >-
+            {% set values = [states('sensor.biosync_v4_pump_active'),
+                             states('sensor.biosync_v4_pump_error')] %}
+            {{ 'ERROR' if 'ERROR' in values else
+               'ACTIVE' if 'ACTIVE' in values else 'IDLE' }}
+          vent: >-
+            {% set values = [states('sensor.biosync_v4_vent_active'),
+                             states('sensor.biosync_v4_vent_error')] %}
+            {{ 'ERROR' if 'ERROR' in values else
+               'ACTIVE' if 'ACTIVE' in values else 'IDLE' }}
+      - if: "{{ is_number(fill) }}"
+        then:
+          - service: mqtt.publish
+            data:
+              topic: biosync_v4/command/nextion
+              retain: false
+              payload: "nDist.val={{ [0, [100, fill | float] | min] | max | round(0) | int }}"
+      - if: >-
+          {{ is_number(temperature) and
+             -2147483648 <= temperature | float <= 2147483647 }}
+        then:
+          - service: mqtt.publish
+            data:
+              topic: biosync_v4/command/nextion
+              retain: false
+              payload: "nTemp.val={{ temperature | float | round(0) | int }}"
+      # Zahlen statt beliebiger Sensorstrings: keine Quotes, Steuerzeichen oder
+      # Einheiten in Nextion-Text; feste Grenzen halten Befehle unter 120 Bytes.
+      - repeat:
+          for_each:
+            - 'tTurb.txt="{{ "%.2f" | format([1000000000000, [-1000000000000, turbidity | float] | max] | min) if is_number(turbidity) else "--" }}"'
+            - 'tTDS.txt="{{ "%.2f" | format([1000000000000, [-1000000000000, tds | float] | max] | min) if is_number(tds) else "--" }}"'
+            - 'tPump.txt="{{ pump }}"'
+            - 'tVent.txt="{{ vent }}"'
+            - "cPumpActive.val={{ 1 if pump == 'ACTIVE' else 0 }}"
+            - "cPumpError.val={{ 1 if pump == 'ERROR' else 0 }}"
+            - "cVentActive.val={{ 1 if vent == 'ACTIVE' else 0 }}"
+            - "cVentError.val={{ 1 if vent == 'ERROR' else 0 }}"
+            - "cSystemIdle.val={{ 1 if pump == 'IDLE' and vent == 'IDLE' else 0 }}"
+          sequence:
+            - service: mqtt.publish
+              data:
+                topic: biosync_v4/command/nextion
+                retain: false
+                payload: "{{ repeat.item }}"
+
+automation:
+  - id: biosync_initialize_nextion_helpers
+    alias: BioSync – Nextion Tankhelfer initialisieren
+    mode: single
+    trigger:
+      - platform: homeassistant
+        event: start
+    condition:
+      - condition: state
+        entity_id: input_boolean.biosync_nextion_initialized
+        state: "off"
+    action:
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_distance_empty
+        data:
+          value: 170
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.biosync_v4_distance_full
+        data:
+          value: 20
+      - service: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.biosync_nextion_initialized
+
+  - id: biosync_nextion_update
+    alias: BioSync – Nextion aktualisieren
+    mode: queued
+    max: 100
+    trigger:
+      - platform: homeassistant
+        event: start
+      - platform: state
+        entity_id:
+          - sensor.biosync_v4_distance
+          - sensor.biosync_v4_fill_percent
+          - sensor.biosync_v4_temperature
+          - sensor.biosync_v4_turbidity
+          - sensor.biosync_v4_tds
+          - sensor.biosync_v4_pump_active
+          - sensor.biosync_v4_pump_error
+          - sensor.biosync_v4_vent_active
+          - sensor.biosync_v4_vent_error
+          - input_number.biosync_v4_distance_empty
+          - input_number.biosync_v4_distance_full
+      - platform: mqtt
+        topic: biosync_v4/availability
+        payload: online
+      - platform: mqtt
+        topic: biosync_v4/nextion
+        # DisplayNode entfernt FF FF FF und publiziert "42 54 ...".
+        value_template: "{{ value | replace(' ', '') | upper }}"
+        payload: "42544E5F52454652455348"
+      - platform: mqtt
+        topic: biosync_v4/nextion
+        value_template: "{{ value | replace(' ', '') | upper }}"
+        payload: "5343525F57414B45"
+    action:
+      - service: script.biosync_nextion_redraw

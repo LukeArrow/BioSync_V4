@@ -57,3 +57,19 @@ Alte `biosync_displaynode_usb_bridge_*`-Referenzen sind nicht V4-kompatibel.
 SD-, Firmware-Alarm- und Letztes-Telegramm-Entities stehen in V4 nicht bereit.
 Biologie- oder Gesundheitsindizes wären nur Heuristiken, keine direkten
 Messungen; dieses Paket legt solche Entities nicht an.
+
+## Nextion über Home Assistant befüllen
+
+Zusätzlich `packages/biosync_nextion.yaml` nach
+`/config/packages/biosync_nextion.yaml` kopieren, Konfiguration prüfen und HA
+neu starten. Das Zusatzpaket nutzt die oben vorhandenen kalibrierten Sensoren
+und setzt alle Anzeige-/Relaisfelder über MQTT. Die Tankhelfer
+`input_number.biosync_v4_distance_empty` (170 cm) und
+`input_number.biosync_v4_distance_full` (20 cm) bleiben nach ihrer einmaligen
+Initialisierung gespeichert. Füllstand ist
+`clamp((leer - Abstand) / (leer - voll) * 100, 0, 100)`.
+Der Kalibrier-Erststartmerker wird dabei nicht verändert.
+
+Feldtabelle, HMI-Abgleich für den angenommenen Namen `cSystemIdle`,
+Refresh-/Wake-Hexbytes, MQTT-Präfix und Installationshinweise siehe
+[Add-on-Dokumentation](../ha-addon/biosync_bridge/DOCS.md#nextion-über-home-assistant-befüllen).
