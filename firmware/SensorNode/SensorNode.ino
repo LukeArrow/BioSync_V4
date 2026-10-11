@@ -113,13 +113,18 @@ void loop() {
   char distanceRawText[48] = "";
   dtostrf(distance, 0, 1, distanceText);
   dtostrf(temperature, 0, 1, temperatureText);
+  size_t distanceRawLength = 0;
   for (uint8_t sample = 0; sample < DISTANCE_SAMPLES; ++sample) {
     char sampleText[16];
     dtostrf(distanceSamples[sample], 0, 1, sampleText);
-    if (sample > 0) {
-      strcat(distanceRawText, ",");
+    const int written = snprintf(distanceRawText + distanceRawLength,
+                                 sizeof(distanceRawText) - distanceRawLength,
+                                 sample > 0 ? ",%s" : "%s", sampleText);
+    if (written < 0 ||
+        distanceRawLength + written >= sizeof(distanceRawText)) {
+      break;
     }
-    strcat(distanceRawText, sampleText);
+    distanceRawLength += written;
   }
   snprintf(
       frame,
