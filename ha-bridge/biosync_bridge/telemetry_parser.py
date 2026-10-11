@@ -1,104 +1,60 @@
-"""Parser für das USB-Protokoll des BioSync-DisplayNode."""
+"""Parser für das USB-Protokoll des BioSync-DisplayNode.
+
+Der Parser verwirft nichts: Es gibt keine Pflichtfelder, keine Bereichsgrenzen
+und keine Zustandsprüfung. Endliche Zahlen werden zu ``float``, alles andere
+bleibt unverändert als Text erhalten. Aussortiert wird in Home Assistant.
+"""
 
 import math
 
-TELEMETRY_FIELDS = (
-    "DIST",
-    "TMP",
-    "TUR",
-    "TDS",
-    "PUMP_ACTIVE",
-    "PUMP_ERROR",
-    "VENT_ACTIVE",
-    "VENT_ERROR",
-)
-REQUIRED_FIELDS = frozenset(TELEMETRY_FIELDS)
 RELAY_FIELDS = ("PUMP_ACTIVE", "PUMP_ERROR", "VENT_ACTIVE", "VENT_ERROR")
-RELAY_STATES = frozenset(("IDLE", "ACTIVE", "ERROR", "UNKNOWN"))
-NODE_STATUS_FIELDS = ("SENSOR_NODE", "RELAY_NODE")
-NODE_STATUSES = frozenset(("ONLINE", "OFFLINE"))
-RAW_VALUE_LIMITS = {
-    "DIST": (0.0, 500.0),
-    "TMP": (-20.0, 60.0),
-    "TUR": (0.0, 1023.0),
-    "TDS": (0.0, 1023.0),
-}
 
 
 class TelemetryParseError(ValueError):
-    """Eine Telemetriezeile entspricht nicht dem USB-Protokoll."""
+    """Wird nicht mehr ausgelöst; nur für Rückwärtskompatibilität erhalten."""
 
 
 def _parse_fields(line, prefix):
     text = line.strip()
-    if not text.startswith(prefix + ";"):
-        raise TelemetryParseError(f"Erwarteter Datensatz {prefix}")
-
+    if text == prefix:
+        body = ""
+    elif text.startswith(prefix + ";"):
+        body = text[len(prefix) + 1 :]
+    else:
+        body = text
     result = {}
-    for item in text[len(prefix) + 1 :].split(";"):
-        if not item or "=" not in item:
-            raise TelemetryParseError("Ungültiges Feld")
-        key, value = item.split("=", 1)
-        if not key or not value or key in result:
-            raise TelemetryParseError("Leeres oder doppeltes Feld")
+    for index, item in enumerate(body.split(";")):
+        if not item:
+            continue
+        key, separator, value = item.partition("=")
+        if not separator or not key:
+            key, value = f"FIELD_{index}", item
+        if key in result:
+            key = f"{key}_{index}"
         result[key] = value
     return result
 
 
-def _number_or_unknown(value, key):
-    if value == "UNKNOWN":
-        return value
+def _convert(value):
     try:
         number = float(value)
-    except ValueError as error:
-        raise TelemetryParseError(f"{key} muss eine Zahl oder UNKNOWN sein") from error
-    if not math.isfinite(number):
-        raise TelemetryParseError(f"{key} muss endlich sein")
-    return number
+    except ValueError:
+        return value
+    return number if math.isfinite(number) else value
 
 
 def parse_telemetry_line(line):
-    """Parst ``$TELEMETRY``; Sensorwerte sind Zahlen oder ``UNKNOWN``."""
-    fields = _parse_fields(line, "$TELEMETRY")
-    missing = REQUIRED_FIELDS.difference(fields)
-    if missing:
-        raise TelemetryParseError(f"Fehlende Felder: {', '.join(sorted(missing))}")
-
-    parsed = {}
-    for key, (minimum, maximum) in RAW_VALUE_LIMITS.items():
-        value = _number_or_unknown(fields[key], key)
-        parsed[key] = (
-            value if value == "UNKNOWN" or minimum <= value <= maximum else "UNKNOWN"
-        )
-    for key in TELEMETRY_FIELDS[4:]:
-        value = fields[key]
-        if value not in RELAY_STATES:
-            raise TelemetryParseError(f"Ungültiger Zustand für {key}: {value}")
-        parsed[key] = value
-    for key in NODE_STATUS_FIELDS:
-        if key in fields:
-            if fields[key] not in NODE_STATUSES:
-                raise TelemetryParseError(
-                    f"Ungültiger Zustand für {key}: {fields[key]}"
-                )
-            parsed[key] = fields[key]
-    return parsed
+    """Parst ``$TELEMETRY``; alle Felder roh, Zahlen als ``float``."""
+    return {
+        key: _convert(value) for key, value in _parse_fields(line, "$TELEMETRY").items()
+    }
 
 
 def parse_relay_line(line):
-    """Parst ``$RELAY`` mit den vier gültigen Relaiszuständen."""
-    fields = _parse_fields(line, "$RELAY")
-    missing = set(RELAY_FIELDS).difference(fields)
-    if missing:
-        raise TelemetryParseError(f"Fehlende Felder: {', '.join(sorted(missing))}")
-
-    parsed = {}
-    for key in RELAY_FIELDS:
-        value = fields[key]
-        if value not in RELAY_STATES:
-            raise TelemetryParseError(f"Ungültiger Zustand für {key}: {value}")
-        parsed[key] = value
-    return parsed
+    """Parst ``$RELAY``; alle Felder roh, Zahlen als ``float``."""
+    return {
+        key: _convert(value) for key, value in _parse_fields(line, "$RELAY").items()
+    }
 
 
 parse_telemetry = parse_telemetry_line
