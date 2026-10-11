@@ -30,11 +30,11 @@ Nach Optionsänderungen das Add-on neu starten. Zugangsdaten nur in der
 HA-Konfiguration speichern, nicht in Git oder in öffentlich geteilten Logs.
 
 Mit `log_level: DEBUG` zeigt das Add-on empfangene USB-Zeilen (`USB RX`),
-gesendete Kommandos (`USB TX`) und geparste MQTT-State-Werte. Unbekannte
-USB-Zeilen erscheinen als Warnung mit sichtbar escaped Steuerzeichen und werden
-trotzdem auf `biosync_v4/unknown` veröffentlicht; `$ERR;`-Meldungen des Mega
-erscheinen als Warnung, `$ACK;`-Bestätigungen nur auf DEBUG. Beide gehen nach
-`biosync_v4/ack`.
+gesendete Kommandos (`USB TX`) und die MQTT-Nutzdaten für State, Relay und
+Nextion. Unbekannte USB-Zeilen erscheinen als Warnung mit sichtbar escaped
+Steuerzeichen und werden trotzdem auf `biosync_v4/unknown` veröffentlicht;
+`$ERR;`-Meldungen des Mega erscheinen als Warnung, `$ACK;`-Bestätigungen nur
+auf DEBUG. Beide gehen nach `biosync_v4/ack`.
 
 ## USB und UART
 

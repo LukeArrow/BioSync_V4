@@ -100,11 +100,38 @@ class BridgeReconnectTests(unittest.TestCase):
 
     def test_relay_line_is_published_unfiltered(self):
         line = "$RELAY;PUMP_ACTIVE=OFF;A0=900"
-        self.bridge._handle_line(line)
+        with self.assertLogs("biosync_bridge", level="DEBUG") as logs:
+            self.bridge._handle_line(line)
         self.client.publish.assert_called_with(
             f"{ROOT}/relay",
             json.dumps({"PUMP_ACTIVE": "OFF", "A0": 900.0}),
             retain=True,
+        )
+        self.assertEqual(
+            logs.output,
+            [
+                f"DEBUG:biosync_bridge:USB RX: {line}",
+                "DEBUG:biosync_bridge:MQTT relay: {'PUMP_ACTIVE': 'OFF', 'A0': 900.0}",
+            ],
+        )
+
+    def test_nextion_line_logs_payload_published_to_mqtt(self):
+        line = "$NEXTION;BTN_REFRESH"
+        with self.assertLogs("biosync_bridge", level="DEBUG") as logs:
+            self.bridge._handle_line(line)
+        self.assertEqual(
+            self.client.publish.call_args_list,
+            [
+                call(f"{ROOT}/raw", line, retain=True),
+                call(f"{ROOT}/nextion", "BTN_REFRESH", retain=False),
+            ],
+        )
+        self.assertEqual(
+            logs.output,
+            [
+                f"DEBUG:biosync_bridge:USB RX: {line}",
+                "DEBUG:biosync_bridge:MQTT nextion: BTN_REFRESH",
+            ],
         )
 
     def test_empty_usb_line_does_not_log_or_publish(self):

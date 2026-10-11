@@ -176,9 +176,9 @@ class BioSyncBridge:
             LOG.debug("MQTT state: %s", values)
             self._publish_telemetry(values)
         elif _has_prefix(line, "$RELAY"):
-            self.client.publish(
-                f"{ROOT}/relay", json.dumps(parse_relay_line(line)), retain=True
-            )
+            values = parse_relay_line(line)
+            LOG.debug("MQTT relay: %s", values)
+            self.client.publish(f"{ROOT}/relay", json.dumps(values), retain=True)
         elif line.startswith("$RAW_SENSOR;"):
             self.client.publish(
                 f"{ROOT}/raw_sensor", line[len("$RAW_SENSOR;") :], retain=True
@@ -188,9 +188,9 @@ class BioSyncBridge:
                 f"{ROOT}/raw_relay", line[len("$RAW_RELAY;") :], retain=True
             )
         elif line.startswith("$NEXTION;"):
-            self.client.publish(
-                f"{ROOT}/nextion", line[len("$NEXTION;") :], retain=False
-            )
+            values = line[len("$NEXTION;") :]
+            LOG.debug("MQTT nextion: %s", values)
+            self.client.publish(f"{ROOT}/nextion", values, retain=False)
         elif line.startswith(("$ACK;", "$ERR;")):
             if line.startswith("$ERR;"):
                 LOG.warning("Fehlermeldung vom Mega: %r", line)
