@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1
+
+- Relay- und Nextion-MQTT-Nutzdaten werden bei `log_level: DEBUG` protokolliert.
+
 ## 1.3.0
 
 - **Protokolländerung – alle drei Firmwares gemeinsam flashen.** Die
