@@ -9,8 +9,38 @@ SENSORS = {
     "pump_error": ("Pumpe Fehler", "PUMP_ERROR", None, None),
     "vent_active": ("Lüftung Aktivität", "VENT_ACTIVE", None, None),
     "vent_error": ("Lüftung Fehler", "VENT_ERROR", None, None),
+    "distance_samples": ("Füllstand Einzelmessungen", "DIST_RAW", None, None),
+    "sensor_age": ("SensorNode Datenalter", "SENSOR_AGE", "duration", "s"),
+    "relay_age": ("RelayNode Datenalter", "RELAY_AGE", "duration", "s"),
+    "relay_adc_a0": ("RelayNode ADC A0", "A0", None, "ADC"),
+    "relay_adc_a1": ("RelayNode ADC A1", "A1", None, "ADC"),
+    "relay_adc_a2": ("RelayNode ADC A2", "A2", None, "ADC"),
+    "relay_adc_a3": ("RelayNode ADC A3", "A3", None, "ADC"),
 }
 RELAY_ENTITIES = frozenset(("pump_active", "pump_error", "vent_active", "vent_error"))
+DIAGNOSTIC_ENTITIES = frozenset(
+    (
+        "pump_active",
+        "pump_error",
+        "vent_active",
+        "vent_error",
+        "distance_samples",
+        "sensor_age",
+        "relay_age",
+        "relay_adc_a0",
+        "relay_adc_a1",
+        "relay_adc_a2",
+        "relay_adc_a3",
+    )
+)
+# Ungefilterte Rohdaten-Topics; ohne availability_topic, damit sie immer sichtbar
+# sind. HA erlaubt höchstens 255 Zeichen pro Zustand.
+RAW_TOPICS = {
+    "usb_raw": ("USB Rohzeile", "raw"),
+    "sensor_frame_raw": ("SensorNode Rohframe", "raw_sensor"),
+    "relay_frame_raw": ("RelayNode Rohframe", "raw_relay"),
+    "usb_unknown": ("Unbekannte USB-Zeile", "unknown"),
+}
 
 
 def publish_discovery(client, root="biosync_v4"):
@@ -61,11 +91,11 @@ def publish_discovery(client, root="biosync_v4"):
                 f"{root}/relay" if slug in RELAY_ENTITIES else f"{root}/state"
             ),
             "value_template": (
-                "{% set v = value_json."
+                "{% set v = value_json.get('"
                 + state_key
-                + " %}{{ v if v != 'UNKNOWN' else None }}"
+                + "') %}{{ v if v is number else None }}"
                 if unit or device_class
-                else "{{ value_json." + state_key + " }}"
+                else "{{ value_json.get('" + state_key + "') }}"
             ),
             "availability_topic": availability,
             "payload_available": "online",
@@ -76,7 +106,7 @@ def publish_discovery(client, root="biosync_v4"):
             config["device_class"] = device_class
         if unit:
             config["unit_of_measurement"] = unit
-        if slug.endswith(("active", "error")):
+        if slug in DIAGNOSTIC_ENTITIES:
             config["entity_category"] = "diagnostic"
         client.publish(
             f"homeassistant/sensor/biosync_v4/{slug}/config",
@@ -97,9 +127,9 @@ def publish_discovery(client, root="biosync_v4"):
                     "default_entity_id": f"binary_sensor.biosync_v4_{slug}",
                     "state_topic": f"{root}/state",
                     "value_template": (
-                        "{% set v = value_json."
+                        "{% set v = value_json.get('"
                         + state_key
-                        + " %}{{ 'ON' if v == 'ONLINE' else "
+                        + "') %}{{ 'ON' if v == 'ONLINE' else "
                         "'OFF' if v == 'OFFLINE' else None }}"
                     ),
                     "payload_on": "ON",
@@ -109,6 +139,23 @@ def publish_discovery(client, root="biosync_v4"):
                     "availability_topic": availability,
                     "payload_available": "online",
                     "payload_not_available": "offline",
+                    "device": device,
+                }
+            ),
+            retain=True,
+        )
+
+    for slug, (name, topic) in RAW_TOPICS.items():
+        client.publish(
+            f"homeassistant/sensor/biosync_v4/{slug}/config",
+            _json(
+                {
+                    "name": name,
+                    "unique_id": f"biosync_v4_{slug}",
+                    "default_entity_id": f"sensor.biosync_v4_{slug}",
+                    "state_topic": f"{root}/{topic}",
+                    "value_template": "{{ value[:255] }}",
+                    "entity_category": "diagnostic",
                     "device": device,
                 }
             ),

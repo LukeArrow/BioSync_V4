@@ -19,6 +19,8 @@ const unsigned long RS485_DELAY_MS = 10;
 
 const char *stateNames[] = {"IDLE", "ACTIVE", "ERROR"};
 uint8_t states[4] = {0, 0, 0, 0};
+// Gemittelte ADC-Rohwerte der letzten Messung, werden als A0..A3 mitgesendet.
+uint16_t rawValues[4] = {0, 0, 0, 0};
 bool initialized = false;
 unsigned long lastSample = 0;
 unsigned long lastTransmit = 0;
@@ -31,8 +33,7 @@ uint16_t readAverage(uint8_t pin) {
   return total / AVERAGE_SAMPLES;
 }
 
-uint8_t readLedState(uint8_t pin, uint8_t previous) {
-  const uint16_t value = readAverage(pin);
+uint8_t ledState(uint16_t value, uint8_t previous) {
   if (value > LED_ON_THRESHOLD) {
     return 1;
   }
@@ -45,15 +46,21 @@ uint8_t readLedState(uint8_t pin, uint8_t previous) {
 void sendStates() {
   // A0: Pumpe aktiv, A1: Pumpe Fehler, A2: Lüftung aktiv, A3: Lüftung Fehler.
   // Fehlerkanäle A1/A3 liefern nur ERROR/IDLE, nie ACTIVE.
-  char frame[112];
+  // A0..A3 enthalten zusätzlich die ungefilterten ADC-Mittelwerte.
+  char frame[160];
   snprintf(
       frame,
       sizeof(frame),
-      "RELAY;PUMP_ACTIVE=%s;PUMP_ERROR=%s;VENT_ACTIVE=%s;VENT_ERROR=%s",
+      "RELAY;PUMP_ACTIVE=%s;PUMP_ERROR=%s;VENT_ACTIVE=%s;VENT_ERROR=%s;"
+      "A0=%u;A1=%u;A2=%u;A3=%u",
       stateNames[states[0]],
       stateNames[states[1] == 1 ? 2 : 0],
       stateNames[states[2]],
-      stateNames[states[3] == 1 ? 2 : 0]);
+      stateNames[states[3] == 1 ? 2 : 0],
+      static_cast<unsigned>(rawValues[0]),
+      static_cast<unsigned>(rawValues[1]),
+      static_cast<unsigned>(rawValues[2]),
+      static_cast<unsigned>(rawValues[3]));
   sendFrame(RS485_TX_PIN, RS485_DE_PIN, RS485_DELAY_MS, frame);
 }
 
@@ -62,7 +69,7 @@ void printDebugValues() {
     Serial.print('A');
     Serial.print(index);
     Serial.print('=');
-    Serial.print(readAverage(SENSOR_PINS[index]));
+    Serial.print(rawValues[index]);
     Serial.print('(');
     Serial.print(states[index]);
     Serial.print(')');
@@ -93,7 +100,8 @@ void loop() {
 
   bool changed = !initialized;
   for (uint8_t index = 0; index < 4; ++index) {
-    const uint8_t next = readLedState(SENSOR_PINS[index], states[index]);
+    rawValues[index] = readAverage(SENSOR_PINS[index]);
+    const uint8_t next = ledState(rawValues[index], states[index]);
     if (next != states[index]) {
       states[index] = next;
       changed = true;

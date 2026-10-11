@@ -31,8 +31,10 @@ HA-Konfiguration speichern, nicht in Git oder in öffentlich geteilten Logs.
 
 Mit `log_level: DEBUG` zeigt das Add-on empfangene USB-Zeilen (`USB RX`),
 gesendete Kommandos (`USB TX`) und geparste MQTT-State-Werte. Unbekannte
-USB-Zeilen erscheinen als Warnung mit sichtbar escaped Steuerzeichen;
-`$ACK;`-Bestätigungen werden nur auf DEBUG geloggt.
+USB-Zeilen erscheinen als Warnung mit sichtbar escaped Steuerzeichen und werden
+trotzdem auf `biosync_v4/unknown` veröffentlicht; `$ERR;`-Meldungen des Mega
+erscheinen als Warnung, `$ACK;`-Bestätigungen nur auf DEBUG. Beide gehen nach
+`biosync_v4/ack`.
 
 ## USB und UART
 
@@ -59,8 +61,25 @@ Die MQTT-Integration muss mit demselben Broker verbunden sein und Discovery
 aktiviert haben. Die Bridge veröffentlicht rohe Messwerte, Node-Status und
 einen Button zur Statusabfrage unter dem HA-Discovery-Präfix `homeassistant/`.
 Das konfigurierte `mqtt_prefix` betrifft die BioSync-Daten-/Command-Topics.
-Der Mega prüft veraltete RS-485-Daten jede Sekunde, sendet Telemetrie über USB
-aber nur bei einer Änderung einschließlich `UNKNOWN`- und ONLINE/OFFLINE-Wechseln.
+
+**Ab 1.3.0 wird nichts mehr verworfen, ersetzt oder gefiltert.** Die
+RS-485-Prüfsumme `CK` ist entfallen; SensorNode, RelayNode und DisplayNode
+müssen daher **gemeinsam** mit der Firmware dieses Releases geflasht werden.
+Jede USB-Zeile wird unverändert auf `biosync_v4/raw` veröffentlicht, rohe
+RS-485-Frames (`$RAW_SENSOR;`/`$RAW_RELAY;`) auf `biosync_v4/raw_sensor` bzw.
+`biosync_v4/raw_relay`, nicht zuordenbare Zeilen auf `biosync_v4/unknown`.
+Werte wie `TMP=-127.0` (DS18B20 nicht angeschlossen) oder `DIST=0.0`
+(Ultraschall-Timeout) kommen ungefiltert an und müssen bei Bedarf in Home
+Assistant aussortiert werden. Zusätzliche Diagnose-Entities: „USB Rohzeile“,
+„SensorNode Rohframe“, „RelayNode Rohframe“, „Unbekannte USB-Zeile“ (auf
+255 Zeichen gekürzt, immer verfügbar), „Füllstand Einzelmessungen“
+(`DIST_RAW`), „SensorNode/RelayNode Datenalter“ (`SENSOR_AGE`/`RELAY_AGE`)
+und „RelayNode ADC A0“–„A3“. Da sich die Rohzeilen häufig ändern, können sie
+bei Bedarf vom Recorder ausgeschlossen werden.
+
+Der Mega prüft den Node-Status jede Sekunde, sendet Telemetrie über USB
+aber nur bei einer Änderung eines Werts oder eines ONLINE/OFFLINE-Wechsels.
+Veraltete Werte bleiben erhalten; nur der Node-Status wechselt auf `OFFLINE`.
 Bei MQTT-Verbindung, USB-Reconnect und der HA-Birth-Message
 `homeassistant/status=online` fordert die Bridge den aktuellen Status mit
 `STATUS_REQUEST` erneut an.
@@ -144,7 +163,9 @@ Nextion-Neustart ohne solche HMI-Meldung ist nicht automatisch erkennbar.
 Manuell lässt sich `script.biosync_nextion_redraw` in HA ausführen.
 
 Jedes Feld erhält eine eigene nicht-retainierte MQTT-Nachricht auf
-`biosync_v4/command/nextion`: nur druckbares ASCII, maximal 120 Zeichen.
+`biosync_v4/command/nextion`. Die Bridge validiert die Befehle nicht und
+entfernt nur Zeilenumbrüche; der Mega führt Zeilen über 255 Zeichen gekürzt aus
+und meldet das per `$ERR;ERROR=USB_TRUNCATED`.
 Zwischen Befehlen liegen 150 ms Pause für den 9600-Baud-Nextion-UART;
 ein vollständiges Neuzeichnen dauert etwa 1,65 Sekunden. Andere Automationen
 sollten nicht gleichzeitig ungepufferte Befehlsserien senden.

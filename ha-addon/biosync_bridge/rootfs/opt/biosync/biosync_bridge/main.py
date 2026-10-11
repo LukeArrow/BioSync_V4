@@ -10,11 +10,7 @@ import paho.mqtt.client as mqtt
 import serial
 
 from .mqtt_discovery import publish_discovery
-from .telemetry_parser import (
-    TelemetryParseError,
-    parse_relay_line,
-    parse_telemetry_line,
-)
+from .telemetry_parser import RELAY_FIELDS, parse_relay_line, parse_telemetry_line
 
 LOG = logging.getLogger("biosync_bridge")
 ROOT = os.getenv("BIOSYNC_MQTT_PREFIX", "biosync_v4")
@@ -76,18 +72,13 @@ class BioSyncBridge:
                 publish_discovery(client, ROOT)
                 self.send_command("STATUS_REQUEST")
             return
+        # Keine Validierung; nur Zeilenumbrüche entfernen, damit eine MQTT-
+        # Nachricht genau eine USB-Kommandozeile bleibt.
+        command = payload.replace("\r", "").replace("\n", "")
         if message.topic == f"{ROOT}/command/nextion":
-            if (
-                payload
-                and len(payload) <= 120
-                and all(0x20 <= ord(char) < 0x7F for char in payload)
-            ):
-                self.send_command("NEX " + payload)
-            else:
-                LOG.warning("Ungültiges Nextion-Kommando verworfen")
+            self.send_command("NEX " + command)
         elif message.topic == f"{ROOT}/command":
-            if payload == "STATUS_REQUEST":
-                self.send_command(payload)
+            self.send_command(command)
 
     def send_command(self, command):
         with self.serial_lock:
@@ -114,12 +105,17 @@ class BioSyncBridge:
             self.available = False
             self.client.publish(f"{ROOT}/availability", "offline", retain=True)
 
-    def _publish_telemetry(self, values):
+    def _mark_available(self):
         with self.serial_lock:
-            self.client.publish(f"{ROOT}/state", json.dumps(values), retain=True)
             if self.serial is not None and not self.available:
                 self.available = True
                 self.client.publish(f"{ROOT}/availability", "online", retain=True)
+
+    def _publish_telemetry(self, values):
+        self.client.publish(f"{ROOT}/state", json.dumps(values), retain=True)
+        relay = {key: values[key] for key in RELAY_FIELDS if key in values}
+        if relay:
+            self.client.publish(f"{ROOT}/relay", json.dumps(relay), retain=True)
 
     def run(self):
         retry_delay = RECONNECT_MIN_DELAY
@@ -169,30 +165,45 @@ class BioSyncBridge:
                 self._close_serial_locked()
 
     def _handle_line(self, line):
+        """Leitet jede USB-Zeile weiter; nichts wird verworfen."""
         if not line:
             return
         LOG.debug("USB RX: %s", line)
-        try:
-            if line.startswith("$TELEMETRY;"):
-                values = parse_telemetry_line(line)
-                LOG.debug("MQTT state: %s", values)
-                self._publish_telemetry(values)
-            elif line.startswith("$RELAY;"):
-                self.client.publish(
-                    f"{ROOT}/relay",
-                    json.dumps(parse_relay_line(line)),
-                    retain=True,
-                )
-            elif line.startswith("$NEXTION;"):
-                self.client.publish(
-                    f"{ROOT}/nextion", line[len("$NEXTION;") :], retain=False
-                )
-            elif line.startswith("$ACK;"):
-                LOG.debug("Bestätigung vom Mega: %s", line)
+        self.client.publish(f"{ROOT}/raw", line, retain=True)
+        self._mark_available()
+        if _has_prefix(line, "$TELEMETRY"):
+            values = parse_telemetry_line(line)
+            LOG.debug("MQTT state: %s", values)
+            self._publish_telemetry(values)
+        elif _has_prefix(line, "$RELAY"):
+            self.client.publish(
+                f"{ROOT}/relay", json.dumps(parse_relay_line(line)), retain=True
+            )
+        elif line.startswith("$RAW_SENSOR;"):
+            self.client.publish(
+                f"{ROOT}/raw_sensor", line[len("$RAW_SENSOR;") :], retain=True
+            )
+        elif line.startswith("$RAW_RELAY;"):
+            self.client.publish(
+                f"{ROOT}/raw_relay", line[len("$RAW_RELAY;") :], retain=True
+            )
+        elif line.startswith("$NEXTION;"):
+            self.client.publish(
+                f"{ROOT}/nextion", line[len("$NEXTION;") :], retain=False
+            )
+        elif line.startswith(("$ACK;", "$ERR;")):
+            if line.startswith("$ERR;"):
+                LOG.warning("Fehlermeldung vom Mega: %r", line)
             else:
-                LOG.warning("Unbekannte USB-Zeile verworfen: %r", line)
-        except TelemetryParseError as error:
-            LOG.warning("Ungültige USB-Zeile verworfen: %s (%s)", line, error)
+                LOG.debug("Bestätigung vom Mega: %s", line)
+            self.client.publish(f"{ROOT}/ack", line, retain=False)
+        else:
+            LOG.warning("Unbekannte USB-Zeile nach %s/unknown: %r", ROOT, line)
+            self.client.publish(f"{ROOT}/unknown", line, retain=True)
+
+
+def _has_prefix(line, prefix):
+    return line == prefix or line.startswith(prefix + ";")
 
 
 def main():

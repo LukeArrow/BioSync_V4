@@ -42,7 +42,7 @@ konfiguriert. So ist keine nicht unterstützte `SoftwareSerial`-Implementierung
 auf dem Nano Every nötig. SensorNode benötigt außerdem die Arduino Libraries
 `OneWire` 2.3.8 und `DallasTemperature` 4.0.6.
 
-Die gemeinsame UART- und Prüfsummenlogik liegt in `firmware/common/SoftUart.h`.
+Die gemeinsame UART-Logik liegt in `firmware/common/SoftUart.h`.
 Für eigenständige `arduino-cli`-Sketch-Builds liegt sie zusätzlich als identische
 Datei in allen drei Sketch-Ordnern. Nur die gemeinsame Datei bearbeiten und
 anschließend aus dem Repo-Root synchronisieren:
@@ -88,8 +88,8 @@ Nach MQTT-Reconnect werden Discovery und Subscriptions erneut eingerichtet.
 Während USB getrennt ist,
 werden Kommandos protokolliert und verworfen, nicht später nachgeholt.
 Bei USB-Verlust meldet MQTT die Bridge als `offline`, damit keine alten
-Messwerte als aktuell gelten. Erst neue gültige `$TELEMETRY` setzt sie wieder
-auf `online`; ein MQTT-Reconnect allein reicht dafür nicht.
+Messwerte als aktuell gelten. Erst eine neu empfangene USB-Zeile (beliebigen
+Inhalts) setzt sie wieder auf `online`; ein MQTT-Reconnect allein reicht dafür nicht.
 
 ## Home-Assistant-Add-on
 
@@ -103,56 +103,74 @@ Die oben beschriebene Standalone-Nutzung bleibt unverändert.
 
 ## Protokoll (zentral dokumentiert)
 
-RS-485-Frames sind ASCII in spitzen Klammern, mit Zeilenende (`\r\n`) und
-verpflichtender XOR-Prüfsumme. Das letzte Feld unmittelbar vor `>` ist
-`;CK=XX`, mit genau zwei Hex-Ziffern in Großschreibung (`00`–`FF`, ggf. führende
-Null). Die Prüfsumme beginnt bei `0` und verknüpft jedes ASCII-Byte des
-Nutzinhalts mit XOR: vom ersten Zeichen nach `<` bis einschließlich des letzten
-Zeichens vor `;CK=`. Die Feldtrenner innerhalb des Nutzinhalts gehören dazu;
-`<`, das Semikolon vor `CK`, `CK=XX`, `>` und das Zeilenende gehören **nicht** dazu.
-Beispiel: XOR über `SENSOR;DIST=123.4;TMP=18.3;TUR=512;TDS=420` ergibt `0x7B`.
+**Grundsatz: Im gesamten Datenpfad SensorNode/RelayNode → RS-485 → DisplayNode
+→ USB → Bridge → MQTT wird nichts verworfen, ersetzt oder gefiltert.** Alle
+Werte werden roh durchgereicht; Plausibilitätsprüfung und Aussortieren
+übernimmt Home Assistant.
+
+RS-485-Frames sind ASCII in spitzen Klammern mit Zeilenende (`\r\n`), ohne
+Prüfsumme:
 
 ```text
-<SENSOR;DIST=123.4;TMP=18.3;TUR=512;TDS=420;CK=7B>
-<RELAY;PUMP_ACTIVE=ACTIVE;PUMP_ERROR=IDLE;VENT_ACTIVE=IDLE;VENT_ERROR=ERROR;CK=17>
+<SENSOR;DIST=123.4;TMP=18.3;TUR=512;TDS=420;DIST_RAW=123.0,123.4,0.0,124.1,123.6>
+<RELAY;PUMP_ACTIVE=ACTIVE;PUMP_ERROR=IDLE;VENT_ACTIVE=IDLE;VENT_ERROR=ERROR;A0=812;A1=12;A2=15;A3=640>
 ```
 
-Der DisplayNode verwirft Frames mit fehlender, fehlerhafter oder falsch
-formatierter Prüfsumme, ohne Werte oder Empfangszeit zu aktualisieren.
-Nach 11 Minuten ohne gültigen Frame werden die jeweiligen Werte `UNKNOWN` und
-der jeweilige Node-Status wechselt auf `OFFLINE`. Home Assistant zeigt dafür
-die Diagnose-Entities „SensorNode“ und „RelayNode“ als Verbunden/Getrennt an.
-Alle drei Firmwares müssen gemeinsam aktualisiert werden; alte Frames ohne
-`CK` werden nicht unterstützt. Die vorhandenen USB-Felder bleiben bestehen;
-`$TELEMETRY` wird nur um die beiden Node-Statusfelder erweitert. Die Bridge
-akzeptiert weiterhin Telemetriezeilen älterer Firmware ohne diese Felder.
+**Alle drei Firmwares müssen gemeinsam aktualisiert werden.** Ein von älterer
+Firmware noch mitgesendetes `;CK=..` wird nicht geprüft, sondern als normales
+Feld `CK` durchgereicht. Der DisplayNode übernimmt alle Felder hinter
+`SENSOR;` bzw. `RELAY;` bis zum ersten `>` unverändert (auch unbekannte Felder,
+nichtnumerische oder leere Werte); Störbytes vor dem Kennzeichen werden
+toleriert. Zusätzlich gibt er **jeden** empfangenen RS-485-Frame roh über USB
+aus, auch Frames ohne gültiges Kennzeichen:
+
+```text
+$RAW_SENSOR;<SENSOR;DIST=...>
+$RAW_RELAY;<RELAY;PUMP_ACTIVE=...>
+```
+
+Läuft der 256-Byte-Empfangspuffer über, wird der bisherige Inhalt als
+`$RAW_SENSOR;OVERFLOW;...` bzw. `$RAW_RELAY;OVERFLOW;...` ausgegeben und der
+Rest des Frames als eigene Zeile weitergereicht.
+
+Nach 11 Minuten ohne Frame wechselt der jeweilige Node-Status auf `OFFLINE`;
+die zuletzt empfangenen Werte bleiben **unverändert** erhalten. `SENSOR_AGE`
+und `RELAY_AGE` geben das Alter der letzten Frames in Sekunden an (`NEVER`,
+solange noch kein Frame empfangen wurde). Home Assistant zeigt den Status als
+Diagnose-Entities „SensorNode“ und „RelayNode“ (Verbunden/Getrennt) an.
 
 `DIST` ist Zentimeter, `TMP` Grad Celsius, `TUR` und `TDS` sind unveränderte
-ADC-Werte. Ein nicht verfügbarer Messwert/Zustand lautet `UNKNOWN`, ein echter
-Ruhezustand `IDLE`. SensorNode misst sofort nach dem Start und danach alle
+ADC-Werte. SensorNode misst sofort nach dem Start und danach alle
 5 Minuten. RelayNode sendet bei Änderung sofort und zusätzlich alle 5 Minuten.
 
-Die Distanz ist der Median aus fünf Ultraschallmessungen mit mindestens 60 ms
-Abstand zwischen Triggern. Timeouts werden ausgeschlossen; bei weniger als
-drei gültigen Messungen wird `UNKNOWN` gesendet. Bei vier gültigen Messungen
-wird das Mittel der beiden mittleren Werte verwendet. Die Messserie braucht
-einschließlich der maximalen Echo-Timeouts höchstens etwa 390 ms.
+`TMP` ist der Rohwert des DS18B20; ein nicht angeschlossener Sensor liefert
+`-127.0` (`DEVICE_DISCONNECTED_C`), der unverändert gesendet wird.
+Die Distanz ergibt sich aus fünf Ultraschallmessungen mit mindestens 60 ms
+Abstand zwischen Triggern. `DIST_RAW` enthält alle fünf Einzelmessungen in cm,
+kommagetrennt; ein Echo-Timeout erscheint als `0.0`. `DIST` ist der Median der
+Messungen ohne Timeout (bei gerader Anzahl das Mittel der beiden mittleren
+Werte), ohne Mindestanzahl; sind alle fünf Messungen Timeouts, ist `DIST=0.0`.
+Die Messserie braucht einschließlich der maximalen Echo-Timeouts höchstens
+etwa 390 ms.
 
 Das RelayNode-LED-Mapping ist A0 → `PUMP_ACTIVE`, A1 → `PUMP_ERROR`,
 A2 → `VENT_ACTIVE`, A3 → `VENT_ERROR`. Die Error-Kanäle (A1/A3) liefern bei
-eingeschalteter Error-LED `ERROR`, sonst `IDLE`, niemals `ACTIVE`;
-nicht verfügbare Zustände bleiben `UNKNOWN`.
+eingeschalteter Error-LED `ERROR`, sonst `IDLE`, niemals `ACTIVE`. Die Zustände
+entstehen per Hysterese aus den ADC-Werten; zusätzlich sendet der RelayNode die
+gemittelten ADC-Rohwerte als `A0`–`A3` (0–1023).
 
-Der Mega prüft die Werte jede Sekunde auf veraltete RS-485-Daten, sendet diese
-Telemetriezeile über USB aber nur, wenn sich ein Wert oder der ONLINE/OFFLINE-
-Status geändert hat:
+Der Mega prüft jede Sekunde den Node-Status, sendet die Telemetriezeile über
+USB aber nur, wenn sich ein Wert oder der ONLINE/OFFLINE-Status geändert hat
+(das Alter allein löst keine neue Zeile aus). Sie enthält alle Felder des
+letzten Sensor- und Relay-Frames unverändert:
 
 ```text
-$TELEMETRY;DIST=..;TMP=..;TUR=..;TDS=..;PUMP_ACTIVE=..;PUMP_ERROR=..;VENT_ACTIVE=..;VENT_ERROR=..
+$TELEMETRY;<Felder SensorNode>;<Felder RelayNode>;SENSOR_NODE=..;RELAY_NODE=..;SENSOR_AGE=..;RELAY_AGE=..
+$TELEMETRY;DIST=..;TMP=..;TUR=..;TDS=..;DIST_RAW=..;PUMP_ACTIVE=..;PUMP_ERROR=..;VENT_ACTIVE=..;VENT_ERROR=..;A0=..;A1=..;A2=..;A3=..;SENSOR_NODE=..;RELAY_NODE=..;SENSOR_AGE=..;RELAY_AGE=..
 ```
 
-Die beiden letzten Felder `SENSOR_NODE` und `RELAY_NODE` melden `ONLINE` oder
-`OFFLINE`. Die Bridge macht daraus die Entities
+Vor dem ersten Frame eines Nodes fehlen dessen Felder. `SENSOR_NODE` und
+`RELAY_NODE` melden `ONLINE` oder `OFFLINE`. Die Bridge macht daraus die Entities
 `binary_sensor.biosync_v4_sensor_node` („SensorNode“) und
 `binary_sensor.biosync_v4_relay_node` („RelayNode“). Eine Automation für beide:
 
@@ -170,40 +188,56 @@ actions:
       message: "{{ trigger.to_state.name }} meldet sich seit über 10 Minuten nicht mehr!"
 ```
 
-Bei einer Änderung eines Relaiszustands sendet der Mega unabhängig vom
-Telemetrie-Takt zusätzlich sofort eine eigene USB-Zeile:
+Bei jedem empfangenen Relay-Frame sendet der Mega unabhängig vom
+Telemetrie-Takt zusätzlich sofort eine eigene USB-Zeile mit allen Feldern:
 
 ```text
-$RELAY;PUMP_ACTIVE=..;PUMP_ERROR=..;VENT_ACTIVE=..;VENT_ERROR=..
+$RELAY;PUMP_ACTIVE=..;PUMP_ERROR=..;VENT_ACTIVE=..;VENT_ERROR=..;A0=..;A1=..;A2=..;A3=..
 ```
 
-Die Bridge veröffentlicht diese vier Zustände als JSON auf
-`biosync_v4/relay`; Sensor- und kombinierte Heartbeat-Telemetrie bleiben auf
-`biosync_v4/state`.
-
-`SD`, `MAINT` und `ALARM` gehören nicht zum V4-Protokoll. Fehlende oder
-veraltete RS-485-Daten werden als `UNKNOWN` übertragen. Empfangene
+`SD`, `MAINT` und `ALARM` gehören nicht zum V4-Protokoll. Empfangene
 Nextion-Tastendrücke gehen als Hex-Bytes auf USB:
-`$NEXTION;65 00 01 01`; die Bridge veröffentlicht sie auf
-`biosync_v4/nextion`.
+`$NEXTION;65 00 01 01`. Nextion-Daten über 128 Byte ohne Endbytes werden
+abgeschnitten als `$ERR;ERROR=NEXTION_OVERFLOW;DATA=<Hex>` gemeldet.
+
+Die Bridge veröffentlicht jede USB-Zeile unverändert (retained) auf
+`biosync_v4/raw` und verteilt sie zusätzlich:
+
+| USB-Zeile | MQTT-Topic |
+|---|---|
+| `$TELEMETRY;...` | `biosync_v4/state` (JSON, alle Felder), Relaisfelder zusätzlich `biosync_v4/relay` |
+| `$RELAY;...` | `biosync_v4/relay` (JSON, alle Felder) |
+| `$RAW_SENSOR;...` / `$RAW_RELAY;...` | `biosync_v4/raw_sensor` / `biosync_v4/raw_relay` (Frame ohne Präfix) |
+| `$NEXTION;...` | `biosync_v4/nextion` (nicht retained) |
+| `$ACK;...` / `$ERR;...` | `biosync_v4/ack` (nicht retained) |
+| alles andere | `biosync_v4/unknown` |
+
+Endliche Zahlen werden im JSON zu Zahlen, alle anderen Werte bleiben Text.
 
 USB-Kommandos sind zeilenweise. `NEX <Nextion-Befehl>` reicht einen Befehl an
-Serial2 weiter und fügt die drei Nextion-Endbytes `0xFF` an.
+Serial2 weiter und fügt die drei Nextion-Endbytes `0xFF` an. Unbekannte
+Kommandos beantwortet der Mega mit `$ERR;ERROR=UNKNOWN_COMMAND;COMMAND=...`,
+ein leeres `NEX ` mit `$ERR;COMMAND=NEX;ERROR=EMPTY`. Zeilen über 255 Zeichen
+werden abgeschnitten ausgeführt und mit `$ERR;ERROR=USB_TRUNCATED;DROPPED=<n>`
+gemeldet.
 `STATUS_REQUEST` sendet der Mega sofort die aktuelle Telemetrie und Relaiszustände
 und bestätigt anschließend die Anfrage mit `$ACK;COMMAND=STATUS_REQUEST`.
 Die Bridge fordert den Status nach MQTT-/USB-Reconnect und nach der HA-Birth-Message
 `homeassistant/status=online` erneut an, damit Home Assistant den aktuellen Stand
 erhält. EEPROM-Konfiguration und Kalibrierkommandos sind nicht Teil des Protokolls. Über
-`biosync_v4/command/nextion` kann HA beliebige Nextion-Kommandos senden.
+`biosync_v4/command/nextion` kann HA beliebige Nextion-Kommandos senden; über
+`biosync_v4/command` beliebige USB-Kommandos. Die Bridge validiert diese nicht,
+sie entfernt nur Zeilenumbrüche.
 Die Firmware hält keine lokale Fallback-Anzeige aktuell: Bei HA-Ausfall bleibt
 das Nextion auf dem zuletzt empfangenen Inhalt stehen.
 
 ## Umrechnung und Kalibrierung
 
-Die Bridge publiziert rohe Sensormesswerte; sie verwirft lediglich nicht
-endliche Werte und markiert Werte außerhalb plausibler Rohbereiche als
-`UNKNOWN`: `DIST` 0–500 cm, `TMP` −20–60 °C sowie `TUR`/`TDS` 0–1023
-(Grenzen inklusive). Die Kalibrierung findet im optionalen Home-Assistant-Paket
+Die Bridge publiziert rohe Sensormesswerte ohne Bereichsgrenzen oder
+Ersetzungen; auch `TMP=-127.0` oder `DIST=0.0` (Timeout) kommen in Home
+Assistant an. Numerische Entities zeigen nichtnumerische Werte als „Unbekannt“;
+der Originalwert bleibt in `biosync_v4/state` und `biosync_v4/raw` erhalten.
+Unplausible Werte bei Bedarf in Home Assistant aussortieren. Die Kalibrierung findet im optionalen Home-Assistant-Paket
 [`homeassistant/packages/biosync_v4.yaml`](homeassistant/packages/biosync_v4.yaml)
 statt. Es stellt anpassbare `input_number`-Helfer und daraus abgeleitete
 kalibrierte Sensoren bereit. Die Kalibrierwerte bleiben in Home Assistant

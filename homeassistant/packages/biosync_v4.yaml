@@ -2,7 +2,8 @@
 # BioSync V4: Kalibrierung und Beispielalarme ausschließlich in Home Assistant.
 # Als /config/packages/biosync_v4.yaml kopieren und in configuration.yaml
 # unter homeassistant: packages: !include_dir_named packages einbinden.
-# MQTT liefert sensor.biosync_v4_*_raw; Firmware und Bridge bleiben unverändert.
+# MQTT liefert sensor.biosync_v4_*_raw ungefiltert (Protokoll ohne Prüfsumme,
+# Rohframes zusätzlich auf biosync_v4/raw_sensor und biosync_v4/raw_relay).
 # V4 hat keine SD-, Firmware-Alarm- oder Letztes-Telegramm-Entity. Alte
 # biosync_displaynode_usb_bridge_* Referenzen passen daher nicht zu diesem Paket.
 # Die Sensoren unten sind aus Rohwerten abgeleitet, keine zusätzlichen Messungen.
@@ -144,8 +145,9 @@ input_boolean:
 template:
   # Fehlende/nichtnumerische Roh- oder Helferwerte ergeben keinen Zahlenwert
   # (unknown), nicht künstlich 0. Ergebnisse werden auf zwei Stellen gerundet.
-  # Die Bridge prüft Rohbereiche: Distanz 0–500 cm, Temperatur -20–60 °C,
-  # Trübung/TDS 0–1023 ADC. Hier gibt es keine zusätzliche Ergebnisbegrenzung.
+  # Firmware und Bridge filtern nichts: z. B. TMP=-127.0 (DS18B20 getrennt) oder
+  # DIST=0.0 (Ultraschall-Timeout) kommen roh an und werden hier mitgerechnet.
+  # Bei Bedarf hier oder in eigenen Templates aussortieren.
   - sensor:
       # Kalibrierter Abstand; daraus wird hier kein Behälterfüllstand berechnet.
       - name: BioSync Füllstand Abstand

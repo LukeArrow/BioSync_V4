@@ -33,6 +33,7 @@ DallasTemperature temperatureSensor(&oneWire);
 unsigned long lastSample = 0;
 bool firstRun = true;
 
+// Liefert 0 bei Echo-Timeout (Timeout-Marker), sonst den Abstand in cm.
 float readDistanceSampleCm() {
   digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2);
@@ -40,18 +41,18 @@ float readDistanceSampleCm() {
   delayMicroseconds(10);
   digitalWrite(TRIG_PIN, LOW);
   const unsigned long duration = pulseIn(ECHO_PIN, HIGH, 30000UL);
-  if (duration == 0) {
-    return NAN;
-  }
   return duration / 58.0f;
 }
 
-float readDistanceCm() {
+// Speichert alle Einzelmessungen (inkl. Timeouts = 0) in samples und liefert
+// den Median der Messungen ohne Timeout; 0, wenn alle Messungen Timeouts sind.
+float readDistanceCm(float samples[DISTANCE_SAMPLES]) {
   float readings[DISTANCE_SAMPLES];
   uint8_t valid = 0;
   for (uint8_t sample = 0; sample < DISTANCE_SAMPLES; ++sample) {
     const float distance = readDistanceSampleCm();
-    if (!isnan(distance)) {
+    samples[sample] = distance;
+    if (distance > 0) {
       uint8_t index = valid;
       while (index > 0 && readings[index - 1] > distance) {
         readings[index] = readings[index - 1];
@@ -65,8 +66,8 @@ float readDistanceCm() {
       delay(DISTANCE_SAMPLE_SPACING_MS);
     }
   }
-  if (valid < 3) {
-    return NAN;
+  if (valid == 0) {
+    return 0.0f;
   }
   return valid % 2 ? readings[valid / 2]
                    : (readings[valid / 2 - 1] + readings[valid / 2]) / 2.0f;
@@ -98,33 +99,42 @@ void loop() {
   firstRun = false;
   lastSample = now;
 
-  const float distance = readDistanceCm();
+  float distanceSamples[DISTANCE_SAMPLES];
+  const float distance = readDistanceCm(distanceSamples);
   temperatureSensor.requestTemperatures();
+  // Rohwert, auch DEVICE_DISCONNECTED_C (-127.0) wird unveraendert gesendet.
   const float temperature = temperatureSensor.getTempCByIndex(0);
   const int turbidity = analogRead(TURBIDITY_PIN);
   const int tds = analogRead(TDS_PIN);
 
-  char frame[112];
+  char frame[160];
   char distanceText[16];
-  char temperatureText[16];
-  if (isnan(distance)) {
-    strcpy(distanceText, "UNKNOWN");
-  } else {
-    dtostrf(distance, 0, 1, distanceText);
-  }
-  if (temperature == DEVICE_DISCONNECTED_C || isnan(temperature)) {
-    strcpy(temperatureText, "UNKNOWN");
-  } else {
-    dtostrf(temperature, 0, 1, temperatureText);
+  char temperatureText[48];
+  char distanceRawText[48] = "";
+  dtostrf(distance, 0, 1, distanceText);
+  dtostrf(temperature, 0, 1, temperatureText);
+  size_t distanceRawLength = 0;
+  for (uint8_t sample = 0; sample < DISTANCE_SAMPLES; ++sample) {
+    char sampleText[16];
+    dtostrf(distanceSamples[sample], 0, 1, sampleText);
+    const int written = snprintf(distanceRawText + distanceRawLength,
+                                 sizeof(distanceRawText) - distanceRawLength,
+                                 sample > 0 ? ",%s" : "%s", sampleText);
+    if (written < 0 ||
+        distanceRawLength + written >= sizeof(distanceRawText)) {
+      break;
+    }
+    distanceRawLength += written;
   }
   snprintf(
       frame,
       sizeof(frame),
-      "SENSOR;DIST=%s;TMP=%s;TUR=%d;TDS=%d",
+      "SENSOR;DIST=%s;TMP=%s;TUR=%d;TDS=%d;DIST_RAW=%s",
       distanceText,
       temperatureText,
       turbidity,
-      tds);
+      tds,
+      distanceRawText);
 
   DEBUG_PRINT(F("DIST="));
   DEBUG_PRINT(distanceText);
@@ -134,6 +144,8 @@ void loop() {
   DEBUG_PRINT(turbidity);
   DEBUG_PRINT(F(" TDS="));
   DEBUG_PRINT(tds);
+  DEBUG_PRINT(F(" DIST_RAW="));
+  DEBUG_PRINT(distanceRawText);
   DEBUG_PRINT(F(" -> "));
   DEBUG_PRINTLN(frame);
 
