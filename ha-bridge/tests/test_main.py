@@ -56,6 +56,7 @@ class BridgeReconnectTests(unittest.TestCase):
         self.assertEqual(
             self.client.publish.call_args_list,
             [
+                call(f"{ROOT}/raw_full", line, retain=False),
                 call(f"{ROOT}/raw", line, retain=True),
                 call(f"{ROOT}/unknown", line, retain=True),
             ],
@@ -93,6 +94,7 @@ class BridgeReconnectTests(unittest.TestCase):
                 self.assertEqual(
                     self.client.publish.call_args_list,
                     [
+                        call(f"{ROOT}/raw_full", line, retain=False),
                         call(f"{ROOT}/raw", line, retain=True),
                         call(f"{ROOT}/{topic}", payload, retain=True),
                     ],
@@ -122,6 +124,7 @@ class BridgeReconnectTests(unittest.TestCase):
         self.assertEqual(
             self.client.publish.call_args_list,
             [
+                call(f"{ROOT}/raw_full", line, retain=False),
                 call(f"{ROOT}/raw", line, retain=True),
                 call(f"{ROOT}/nextion", "BTN_REFRESH", retain=False),
             ],
@@ -139,6 +142,39 @@ class BridgeReconnectTests(unittest.TestCase):
             self.bridge._handle_line("")
         self.client.publish.assert_not_called()
 
+    def test_raw_full_preserves_every_nonempty_line_before_routing(self):
+        for line in (
+            "$TELEMETRY;DIST=invalid",
+            "$RELAY;A0=900",
+            "$RAW_SENSOR;<SENSOR;DIST=1;CK=7B>",
+            "$RAW_RELAY;OVERFLOW;<RELAY;A0=1",
+            "$NEXTION;BTN_REFRESH",
+            "$ACK;COMMAND=STATUS_REQUEST",
+            "$ERR;ERROR=UNKNOWN_COMMAND;COMMAND=GET",
+            "  Datenmüll\x00\x1b  ",
+            " ",
+        ):
+            with self.subTest(line=line):
+                self.client.publish.reset_mock()
+                with patch("biosync_bridge.main._has_prefix") as has_prefix:
+
+                    def check_publish_before_parsing(value, prefix):
+                        self.assertEqual(
+                            self.client.publish.call_args_list[0],
+                            call(f"{ROOT}/raw_full", line, retain=False),
+                        )
+                        return value == prefix or value.startswith(prefix + ";")
+
+                    has_prefix.side_effect = check_publish_before_parsing
+                    self.bridge._handle_line(line)
+                self.assertEqual(
+                    self.client.publish.call_args_list[:2],
+                    [
+                        call(f"{ROOT}/raw_full", line, retain=False),
+                        call(f"{ROOT}/raw", line, retain=True),
+                    ],
+                )
+
     def test_telemetry_logs_rx_and_publishes_raw_state_and_relay(self):
         line = (
             "$TELEMETRY;DIST=100;TMP=-127.0;TUR=512;TDS=420;"
@@ -147,7 +183,8 @@ class BridgeReconnectTests(unittest.TestCase):
         )
         with self.assertLogs("biosync_bridge", level="DEBUG") as logs:
             self.bridge._handle_line(line)
-        raw, state, relay = self.client.publish.call_args_list
+        raw_full, raw, state, relay = self.client.publish.call_args_list
+        self.assertEqual(raw_full, call(f"{ROOT}/raw_full", line, retain=False))
         self.assertEqual(raw, call(f"{ROOT}/raw", line, retain=True))
         self.assertEqual(state.args[0], f"{ROOT}/state")
         self.assertEqual(state.kwargs, {"retain": True})
@@ -181,7 +218,7 @@ class BridgeReconnectTests(unittest.TestCase):
         self.bridge._handle_line("$TELEMETRY;SENSOR_NODE=OFFLINE")
         self.assertEqual(
             [entry.args[0] for entry in self.client.publish.call_args_list],
-            [f"{ROOT}/raw", f"{ROOT}/state"],
+            [f"{ROOT}/raw_full", f"{ROOT}/raw", f"{ROOT}/state"],
         )
 
     def test_usb_command_logs_tx_before_writing(self):
