@@ -169,6 +169,7 @@ class BioSyncBridge:
         if not line:
             return
         LOG.debug("USB RX: %s", line)
+        self.client.publish(f"{ROOT}/raw_full", line, retain=False)
         self.client.publish(f"{ROOT}/raw", line, retain=True)
         self._mark_available()
         if _has_prefix(line, "$TELEMETRY"):
