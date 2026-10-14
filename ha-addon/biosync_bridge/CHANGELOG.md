@@ -1,4 +1,7 @@
 # Changelog
+## 1.3.2
+
+- alles kommt nun durch die brdige
 
 ## 1.3.1
 
